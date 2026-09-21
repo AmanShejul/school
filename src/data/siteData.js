@@ -1,4 +1,16 @@
-// Editable content model. Keep verified school facts here as they become available.
+// Central content model for verified school information.
+export const imageAssets = {
+  logo: '/assets/logo/jigisha-logo.png',
+  heroImage: '/assets/hero/jigisha-school-enhanced.jpg',
+  campusImages: [],
+  classroomImages: [],
+  studentImages: [],
+  facultyImages: [],
+  eventImages: [],
+  achievementImages: [],
+  galleryImages: ['/assets/hero/jigisha-school-enhanced.jpg'],
+}
+
 export const schoolStats = [
   { label: 'Years of excellence', value: null, suffix: '' },
   { label: 'Learners', value: null, suffix: '+' },
@@ -7,21 +19,21 @@ export const schoolStats = [
 ]
 
 export const facilities = [
-  { number: '01', title: 'Classrooms', note: 'A bright place for focused learning.', tone: 'facility-blue' },
-  { number: '02', title: 'Library & discovery', note: 'Room for ideas to take root.', tone: 'facility-orange' },
-  { number: '03', title: 'Labs & exploration', note: 'A configurable space for practical learning.', tone: 'facility-green' },
-  { number: '04', title: 'Sports & movement', note: 'Space to move, play and belong.', tone: 'facility-navy' },
-  { number: '05', title: 'Activities & making', note: 'Room to create, collaborate and express.', tone: 'facility-orange' },
-  { number: '06', title: 'Campus & community', note: 'The setting for everyday school life.', tone: 'facility-blue' },
+  { number: '01', title: 'Learning spaces', description: 'A considered place for focused learning.', icon: 'book', image: null, tone: 'facility-blue' },
+  { number: '02', title: 'Discovery', description: 'Room for questions, ideas and reflection.', icon: 'compass', image: null, tone: 'facility-orange' },
+  { number: '03', title: 'Exploration', description: 'A considered space for practical learning.', icon: 'flask', image: null, tone: 'facility-green' },
+  { number: '04', title: 'Movement', description: 'A considered space for an active school day.', icon: 'activity', image: null, tone: 'facility-navy' },
+  { number: '05', title: 'Making', description: 'Room to create, collaborate and express.', icon: 'palette', image: null, tone: 'facility-orange' },
+  { number: '06', title: 'Campus', description: 'The setting for everyday school life.', icon: 'building', image: null, tone: 'facility-blue' },
 ]
 
 export const initiatives = [
-  { label: 'Learn', title: 'Academic programmes', text: 'Strong foundations and the confidence to ask better questions.', tone: 'initiative-blue' },
-  { label: 'Create', title: 'Arts & culture', text: 'Opportunities to express, collaborate and make something meaningful.', tone: 'initiative-orange' },
-  { label: 'Move', title: 'Sport & wellbeing', text: 'Healthy habits, teamwork and joy in an active school day.', tone: 'initiative-green' },
+  { category: 'Learning', title: 'Ideas in motion', description: 'A space for verified learning stories and school initiatives.', image: null, link: '/academics', tone: 'initiative-blue' },
+  { category: 'Creativity', title: 'Making meaning', description: 'A place to share verified creative work and community initiatives.', image: null, link: '/student-life', tone: 'initiative-orange' },
+  { category: 'Wellbeing', title: 'Growing together', description: 'A space for verified activities that support a balanced school life.', image: null, link: '/student-life', tone: 'initiative-green' },
 ]
 
-export const galleryPlaceholders = [
+export const galleryVisuals = [
   { category: 'Campus', title: 'A place to belong', tone: 'gallery-blue' },
   { category: 'Learning', title: 'Curiosity in action', tone: 'gallery-orange' },
   { category: 'Community', title: 'Growing together', tone: 'gallery-green' },
@@ -30,8 +42,5 @@ export const galleryPlaceholders = [
   { category: 'Arts', title: 'Find your voice', tone: 'gallery-blue' },
 ]
 
-export const newsPlaceholders = [
-  { date: 'Coming soon', category: 'School life', title: 'Stories from the Jigisha community', text: 'Verified school news and event updates will appear here.' },
-  { date: 'Coming soon', category: 'Learning', title: 'A closer look at learning', text: 'Explore the ideas and experiences shaping life at Jigisha.' },
-  { date: 'Coming soon', category: 'Community', title: 'Together, we begin', text: 'Updates for families will be shared in this space.' },
-]
+// Keep this empty until verified school news or events are available.
+export const newsItems = []

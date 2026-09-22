@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useInView, useReducedMotion } from 'framer-motion'
 import { facilities, galleryVisuals, imageAssets, initiatives, newsItems, schoolStats } from './data/siteData'
+import { adminLogin, adminLogout, deleteAdminEnquiry, getAdminEnquiries, getAdminEnquiry, getAdminStats, getNews, submitAdmissionEnquiry, submitContact, submitEnquiry, updateAdminEnquiry } from './services/api'
 
 const logo = imageAssets.logo
 const heroImage = imageAssets.heroImage
@@ -29,9 +30,9 @@ const navItems = [
   { label: 'About', href: '/about', children: ['About school', 'Vision & mission', "Principal's message"] },
   { label: 'Academics', href: '/academics', children: ['Curriculum', 'Teaching approach', 'Activities'] },
   { label: 'Why Jigisha', href: '/why-jigisha', children: ['Our difference', 'School values', 'Learning spaces'] },
-  { label: 'Admissions', href: '/admissions', children: ['Admission process', 'Required documents', 'Enquiry'] },
+  { label: 'Admissions', href: '/admissions', children: ['Admission process', 'Required documents', { label: 'Enquiry', href: '/admissions#enquiry-form' }] },
   { label: 'Student life', href: '/student-life', children: ['Events', 'Sports', 'Arts & culture'] },
-  { label: 'Explore', href: '/gallery', children: ['Gallery', 'Achievements', 'News'] },
+  { label: 'Explore', href: '/gallery', children: [{ label: 'Gallery', href: '/gallery' }, { label: 'Achievements', href: '/achievements' }, { label: 'News', href: '/news' }] },
 ]
 
 const journey = [
@@ -57,10 +58,32 @@ const faqs = [
   ['What information should I keep ready?', 'For a first enquiry, your parent name, student name, preferred grade, email and mobile number are enough.'],
 ]
 
+function getLocation() {
+  return { path: window.location.pathname || '/', hash: window.location.hash }
+}
+
+function anchorFor(label) {
+  return label.toLowerCase().trim().replace(/\s+/g, '-')
+}
+
 function App() {
+  const [location, setLocation] = useState(getLocation)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [openDropdown, setOpenDropdown] = useState(null)
   const [scrolled, setScrolled] = useState(false)
-  const path = window.location.pathname
+
+  const navigate = (to) => {
+    const next = new URL(to, window.location.origin)
+    const nextUrl = `${next.pathname}${next.search}${next.hash}`
+    window.history.pushState({}, '', nextUrl)
+    setLocation({ path: next.pathname || '/', hash: next.hash })
+    setMenuOpen(false)
+    setOpenDropdown(null)
+    window.requestAnimationFrame(() => {
+      if (next.hash) document.getElementById(next.hash.slice(1))?.scrollIntoView({ behavior: 'smooth' })
+      else window.scrollTo({ top: 0, behavior: 'smooth' })
+    })
+  }
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24)
@@ -69,27 +92,119 @@ function App() {
   }, [])
 
   useEffect(() => {
-    document.title = path === '/' ? 'Jigisha International School' : `${pageTitle(path)} · Jigisha International School`
-    window.scrollTo(0, 0)
-  }, [path])
+    const onPopState = () => {
+      setLocation(getLocation())
+      setMenuOpen(false)
+      setOpenDropdown(null)
+    }
+    window.addEventListener('popstate', onPopState)
+    window.addEventListener('hashchange', onPopState)
+    return () => {
+      window.removeEventListener('popstate', onPopState)
+      window.removeEventListener('hashchange', onPopState)
+    }
+  }, [])
+
+  useEffect(() => {
+    document.title = location.path === '/' ? 'Jigisha International School' : `${pageTitle(location.path)} · Jigisha International School`
+    if (location.hash) {
+      window.requestAnimationFrame(() => document.getElementById(location.hash.slice(1))?.scrollIntoView({ behavior: 'smooth' }))
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }, [location])
+
+  if (location.path === '/admin/login') return <AdminLoginPage navigate={navigate} />
+  if (location.path === '/admin') return <AdminDashboard navigate={navigate} />
 
   return <>
-    <div className="utility-bar"><div className="shell utility-inner"><span>JIGISHA INTERNATIONAL SCHOOL</span><span className="utility-location">N-7, CIDCO · Chhatrapati Sambhajinagar</span><a href="#enquiry">Start an enquiry <Icon name="arrow-up-right" size={14} /></a></div></div>
+    <div className="utility-bar"><div className="shell utility-inner"><span>JIGISHA INTERNATIONAL SCHOOL</span><span className="utility-location">N-7, CIDCO · Chhatrapati Sambhajinagar</span><a href="/#enquiry" onClick={event => { event.preventDefault(); navigate('/#enquiry') }}>Start an enquiry <Icon name="arrow-up-right" size={14} /></a></div></div>
     <header className={`site-header ${scrolled ? 'is-scrolled' : ''}`}>
       <div className="shell nav-inner">
-        <a className="brand" href="/" aria-label="Jigisha International School home"><span className="brand-mark"><img src={logo} alt="" /></span><span className="brand-copy"><strong>Jigisha</strong><em>International School</em></span></a>
+        <a className="brand" href="/" onClick={event => { event.preventDefault(); navigate('/') }} aria-label="Jigisha International School home"><span className="brand-mark"><img src={logo} alt="" /></span><span className="brand-copy"><strong>Jigisha</strong><em>International School</em></span></a>
         <nav className={`desktop-nav ${menuOpen ? 'mobile-open' : ''}`} aria-label="Primary navigation">
-          <a href="/" className="nav-home">Home</a>
-          {navItems.map(item => <div className="nav-dropdown" key={item.label}><a href={item.href}>{item.label}<Icon name="chevron-down" size={13} /></a><div className="dropdown-menu">{item.children.map(child => <a key={child} href={`${item.href}#${child.toLowerCase().replaceAll(' ', '-')}`}>{child}</a>)}</div></div>)}
-          <a className="nav-contact" href="/contact">Contact <Icon name="arrow-up-right" size={14} /></a>
+          <a href="/" className="nav-home" onClick={event => { event.preventDefault(); navigate('/') }}>Home</a>
+          {navItems.map(item => <div className={`nav-dropdown ${openDropdown === item.label ? 'dropdown-open' : ''}`} key={item.label}>
+            <div className="nav-parent"><a href={item.href} onClick={event => { event.preventDefault(); navigate(item.href) }}>{item.label}<Icon name="chevron-down" size={13} /></a><button type="button" className="dropdown-toggle" aria-label={`Toggle ${item.label} menu`} aria-expanded={openDropdown === item.label} onClick={() => setOpenDropdown(openDropdown === item.label ? null : item.label)}><Icon name="chevron-down" size={13} /></button></div>
+            <div className="dropdown-menu">{item.children.map(child => { const childHref = typeof child === 'string' ? `${item.href}#${anchorFor(child)}` : child.href; const childLabel = typeof child === 'string' ? child : child.label; return <a key={childLabel} href={childHref} onClick={event => { event.preventDefault(); navigate(childHref) }}>{childLabel}</a> })}</div>
+          </div>)}
+          <a className="nav-contact" href="/contact" onClick={event => { event.preventDefault(); navigate('/contact') }}>Contact <Icon name="arrow-up-right" size={14} /></a>
         </nav>
-        <a className="button button-small nav-cta" href="#enquiry">Enquire now <Icon name="arrow-up-right" size={14} /></a>
-        <button className={`menu-toggle ${menuOpen ? 'open' : ''}`} onClick={() => setMenuOpen(!menuOpen)} aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={menuOpen}><span></span><span></span></button>
+        <a className="button button-small nav-cta" href="/#enquiry" onClick={event => { event.preventDefault(); navigate('/#enquiry') }}>Enquire now <Icon name="arrow-up-right" size={14} /></a>
+        <button type="button" className={`menu-toggle ${menuOpen ? 'open' : ''}`} onClick={() => setMenuOpen(!menuOpen)} aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={menuOpen}><span></span><span></span></button>
       </div>
     </header>
-    {path === '/' ? <Home /> : <InnerPage path={path} />}
+    {location.path === '/' ? <Home /> : <InnerPage path={location.path} />}
     <Footer />
   </>
+}
+
+function AdminLoginPage({ navigate }) {
+  const [form, setForm] = useState({ email: '', password: '' })
+  const [status, setStatus] = useState('idle')
+  const update = event => setForm(current => ({ ...current, [event.target.name]: event.target.value }))
+  const submit = async event => {
+    event.preventDefault()
+    if (!form.email.trim() || !form.password) { setStatus('error'); return }
+    setStatus('loading')
+    try { await adminLogin({ email: form.email.trim(), password: form.password }); navigate('/admin') } catch { setStatus('error') }
+  }
+  useEffect(() => { document.title = 'Admin login · Jigisha International School' }, [])
+  return <main className="admin-page admin-login-page"><div className="admin-login-card"><a className="admin-brand" href="/" onClick={event => { event.preventDefault(); navigate('/') }}><span className="admin-brand-mark"><img src={logo} alt="" /></span><span><strong>Jigisha</strong><small>International School</small></span></a><p className="admin-eyebrow">Administration</p><h1>Welcome back.</h1><p className="admin-muted">Sign in to manage school enquiries.</p><form className="admin-login-form" onSubmit={submit} noValidate>{status === 'error' ? <p className="admin-alert" role="alert">Unable to sign in. Check your details and try again.</p> : null}<label>Email address<input type="email" name="email" value={form.email} onChange={update} autoComplete="username" required /></label><label>Password<input type="password" name="password" value={form.password} onChange={update} autoComplete="current-password" required /></label><button className="admin-primary-button" type="submit" disabled={status === 'loading'}>{status === 'loading' ? 'Signing in…' : 'Sign in'} <Icon name="arrow-up-right" size={15} /></button></form><a className="admin-back-link" href="/" onClick={event => { event.preventDefault(); navigate('/') }}>Back to public website</a></div></main>
+}
+
+function AdminDashboard({ navigate }) {
+  const [stats, setStats] = useState(null)
+  const [items, setItems] = useState([])
+  const [total, setTotal] = useState(0)
+  const [filters, setFilters] = useState({ search: '', status: '', grade: '' })
+  const [selected, setSelected] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [toast, setToast] = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const [nextStats, nextEnquiries] = await Promise.all([getAdminStats(), getAdminEnquiries(filters)])
+      setStats(nextStats)
+      setItems(nextEnquiries.items || [])
+      setTotal(nextEnquiries.total || 0)
+    } catch (requestError) {
+      if (requestError.status === 401) navigate('/admin/login')
+      else setError('We couldn’t load the enquiry records. Please try again.')
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [filters.search, filters.status, filters.grade])
+  useEffect(() => { document.title = 'Administration · Jigisha International School' }, [])
+  useEffect(() => { if (!toast) return undefined; const timer = window.setTimeout(() => setToast(''), 2800); return () => window.clearTimeout(timer) }, [toast])
+
+  const updateFilter = event => setFilters(current => ({ ...current, [event.target.name]: event.target.value }))
+  const openDetail = async id => {
+    try { setSelected(await getAdminEnquiry(id)) } catch (requestError) { if (requestError.status === 401) navigate('/admin/login'); else setError('Unable to open this enquiry.') }
+  }
+  const changeStatus = async (id, status) => {
+    try { await updateAdminEnquiry(id, { status }); setToast('Enquiry status updated.'); await load(); if (selected?.id === id) setSelected(current => ({ ...current, status })) } catch (requestError) { if (requestError.status === 401) navigate('/admin/login'); else setError('Unable to update this enquiry.') }
+  }
+  const remove = async id => {
+    if (!window.confirm('Delete this enquiry permanently?')) return
+    try { await deleteAdminEnquiry(id); setSelected(current => current?.id === id ? null : current); setToast('Enquiry deleted.'); await load() } catch (requestError) { if (requestError.status === 401) navigate('/admin/login'); else setError('Unable to delete this enquiry.') }
+  }
+  const logout = async () => { try { await adminLogout() } finally { navigate('/admin/login') } }
+
+  return <main className="admin-page"><div className="admin-shell"><header className="admin-header"><div className="admin-header-brand"><span className="admin-brand-mark"><img src={logo} alt="" /></span><div><strong>Jigisha International School</strong><span>Administration</span></div></div><div className="admin-header-actions"><a href="/" onClick={event => { event.preventDefault(); navigate('/') }}>View website</a><button type="button" onClick={logout}>Log out</button></div></header><section className="admin-welcome"><div><p className="admin-eyebrow">School administration</p><h1>Enquiries</h1><p className="admin-muted">Review, follow up and keep every family conversation moving.</p></div><button type="button" className="admin-refresh" onClick={load}>Refresh <Icon name="arrow-up-right" size={14} /></button></section>{stats ? <div className="admin-stats-grid"><AdminStat label="Total enquiries" value={stats.total_enquiries} tone="blue" /><AdminStat label="New enquiries" value={stats.new_enquiries} tone="orange" /><AdminStat label="Contacted" value={stats.contacted_enquiries} tone="green" /><AdminStat label="Closed" value={stats.closed_enquiries} tone="navy" /></div> : null}<section className="admin-panel"><div className="admin-panel-head"><div><h2>Enquiry records</h2><span>{total} {total === 1 ? 'record' : 'records'}</span></div><div className="admin-filters"><label className="admin-search"><span className="sr-only">Search enquiries</span><input name="search" value={filters.search} onChange={updateFilter} placeholder="Search parent, student, email or mobile" /></label><label><span className="sr-only">Filter by grade</span><input name="grade" value={filters.grade} onChange={updateFilter} placeholder="Grade" /></label><label><span className="sr-only">Filter by status</span><select name="status" value={filters.status} onChange={updateFilter}><option value="">All statuses</option><option value="new">New</option><option value="contacted">Contacted</option><option value="closed">Closed</option></select></label></div></div>{error ? <p className="admin-alert" role="alert">{error}</p> : null}{loading ? <div className="admin-empty">Loading enquiries…</div> : items.length === 0 ? <div className="admin-empty"><strong>No enquiries yet.</strong><span>New parent enquiries will appear here.</span></div> : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Parent</th><th>Student</th><th>Grade</th><th>Email</th><th>Mobile</th><th>Status</th><th>Submitted</th><th>Actions</th></tr></thead><tbody>{items.map(item => <tr key={item.id}><td data-label="Parent"><strong>{item.parent}</strong></td><td data-label="Student">{item.student}</td><td data-label="Grade">{item.grade}</td><td data-label="Email">{item.email}</td><td data-label="Mobile">{item.mobile}</td><td data-label="Status"><select className={`admin-status-select status-${item.status}`} value={item.status} onChange={event => changeStatus(item.id, event.target.value)} aria-label={`Change status for ${item.parent}`}><option value="new">New</option><option value="contacted">Contacted</option><option value="closed">Closed</option></select></td><td data-label="Submitted">{formatAdminDate(item.created_at)}</td><td data-label="Actions"><div className="admin-row-actions"><button type="button" onClick={() => openDetail(item.id)}>View</button><button type="button" className="admin-delete" onClick={() => remove(item.id)}>Delete</button></div></td></tr>)}</tbody></table></div>}</section></div>{toast ? <div className="admin-toast" role="status">{toast}</div> : null}{selected ? <div className="admin-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSelected(null) }}><section className="admin-detail" role="dialog" aria-modal="true" aria-labelledby="admin-detail-title"><button type="button" className="admin-modal-close" onClick={() => setSelected(null)} aria-label="Close enquiry details"><Icon name="close" size={21} /></button><p className="admin-eyebrow">Enquiry #{selected.id}</p><h2 id="admin-detail-title">{selected.parent}</h2><div className="admin-detail-status"><span>Current status</span><select className={`admin-status-select status-${selected.status}`} value={selected.status} onChange={event => changeStatus(selected.id, event.target.value)}><option value="new">New</option><option value="contacted">Contacted</option><option value="closed">Closed</option></select></div><dl><div><dt>Student</dt><dd>{selected.student}</dd></div><div><dt>Email</dt><dd>{selected.email}</dd></div><div><dt>Mobile</dt><dd>{selected.mobile}</dd></div><div><dt>Grade</dt><dd>{selected.grade}</dd></div><div><dt>Submitted</dt><dd>{formatAdminDate(selected.created_at)}</dd></div><div className="admin-detail-message"><dt>Message</dt><dd>{selected.message || 'No message provided.'}</dd></div></dl><button type="button" className="admin-danger-button" onClick={() => remove(selected.id)}>Delete enquiry</button></section></div> : null}</main>
+}
+
+function AdminStat({ label, value, tone }) {
+  return <div className={`admin-stat admin-stat-${tone}`}><span>{label}</span><strong>{value ?? '—'}</strong><small>Verified database total</small></div>
+}
+
+function formatAdminDate(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 function Home() {
@@ -173,8 +288,7 @@ function GallerySection() {
 function NewsSection() {
   const [items, setItems] = useState(newsItems)
   useEffect(() => {
-    const apiUrl = import.meta.env.VITE_API_URL || '/api'
-    fetch(`${apiUrl}/news`).then(response => response.ok ? response.json() : Promise.reject()).then(payload => { if (payload.items?.length) setItems(payload.items) }).catch(() => undefined)
+    getNews().then(payload => { if (payload.items?.length) setItems(payload.items) }).catch(() => undefined)
     return undefined
   }, [])
   return <section className="section news-section"><div className="shell"><div className="section-head split-head"><div><p className="eyebrow"><span></span> News & events</p><h2>From the <i>community.</i></h2></div><p>School news and event updates will appear here.</p></div>{items.length ? <div className="news-grid">{items.map((item, index) => <Reveal className="news-card" delay={index * .07} key={item.title}><div className={`news-art news-art-${(index % 3) + 1}`}>{item.image ? <img src={item.image} alt="" loading="lazy" /> : null}<span>{String(index + 1).padStart(2, '0')}</span><b>J</b></div><div className="news-copy"><div><small>{item.date}</small><small>{item.category}</small></div><h3>{item.title}</h3><p>{item.text || item.description}</p><a href="/news">Read more <Icon name="arrow-up-right" size={15} /></a></div></Reveal>)}</div> : <div className="news-empty"><span className="news-empty-mark"><Icon name="sparkle" size={27} /></span><div><p className="eyebrow"><span></span> News & events</p><h3>School news and event updates will appear here.</h3><p>Verified announcements and community stories will be shared here when ready.</p></div><a className="text-link" href="/contact">Contact the school <Icon name="arrow-up-right" size={15} /></a></div>}</div></section>
@@ -184,17 +298,41 @@ function ContactSection() {
   return <section className="contact-section section-dark"><div className="shell contact-grid"><div><p className="eyebrow eyebrow-light"><span></span> Visit Jigisha</p><h2>Find your way<br /><i>to us.</i></h2><p className="contact-lead">Jigisha International School<br />M-1 Jigisha, N-7, CIDCO<br />Chhatrapati Sambhajinagar<br />Maharashtra 431003, India</p><a className="button button-orange" href="/contact">Contact the school <Icon name="arrow-up-right" size={15} /></a></div><div className="map-card"><div className="map-grid-lines"></div><div className="map-pin"><span>J</span></div><div className="map-label">N-7 · CIDCO<br /><strong>Jigisha International School</strong></div><span className="map-caption">Map integration ready</span></div></div></section>
 }
 
-function EnquiryForm() {
+const emptyEnquiry = { parent: '', student: '', email: '', mobile: '', grade: '', message: '' }
+
+function EnquiryForm({ endpoint = 'enquiry' } = {}) {
   const [status, setStatus] = useState('idle')
-  const [form, setForm] = useState({ parent: '', student: '', email: '', mobile: '', grade: '', message: '' })
-  const update = event => setForm({ ...form, [event.target.name]: event.target.value })
+  const [form, setForm] = useState(emptyEnquiry)
+  const update = event => setForm(current => ({ ...current, [event.target.name]: event.target.value }))
   const submit = async event => {
-    event.preventDefault(); setStatus('loading')
-    const apiUrl = import.meta.env.VITE_API_URL || '/api'
-    try { const response = await fetch(`${apiUrl}/enquiries`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) }); if (!response.ok) throw new Error('Unable to submit enquiry'); setStatus('success') } catch { setStatus('error') }
+    event.preventDefault()
+    const values = Object.fromEntries(Object.entries(form).map(([key, value]) => [key, value.trim()]))
+    if (values.parent.length < 2 || values.student.length < 2 || !/^\S+@\S+\.\S+$/.test(values.email) || values.mobile.length < 7 || !values.grade) { setStatus('error'); return }
+    setStatus('loading')
+    try {
+      if (endpoint === 'admission') await submitAdmissionEnquiry(values)
+      else await submitEnquiry(values)
+      setForm(emptyEnquiry)
+      setStatus('success')
+    } catch { setStatus('error') }
   }
-  if (status === 'success') return <div className="form-success reveal"><span className="success-mark"><Icon name="check" size={25} /></span><p className="eyebrow"><span></span> Thank you</p><h3>Your enquiry is on its way.</h3><p>We&apos;ve recorded your interest. The school team will be in touch with the information you need.</p><button className="text-link" onClick={() => { setStatus('idle'); setForm({ parent: '', student: '', email: '', mobile: '', grade: '', message: '' }) }}>Send another enquiry <Icon name="arrow-up-right" size={15} /></button></div>
-  return <form id="enquiry-form" className="enquiry-form reveal delay-one" onSubmit={submit}><div className="form-heading"><span>Enquiry form</span><small>All fields marked * are required</small></div>{status === 'error' ? <p className="form-error" role="alert">We couldn&apos;t send that just now. Please try again or contact the school directly.</p> : null}<div className="form-row"><label>Parent / guardian name *<input required name="parent" value={form.parent} onChange={update} placeholder="Your full name" /></label><label>Student name *<input required name="student" value={form.student} onChange={update} placeholder="Student's full name" /></label></div><div className="form-row"><label>Email address *<input required type="email" name="email" value={form.email} onChange={update} placeholder="you@example.com" /></label><label>Mobile number *<input required name="mobile" value={form.mobile} onChange={update} placeholder="Your mobile number" /></label></div><div className="form-row"><label>Grade / standard<select required name="grade" value={form.grade} onChange={update}><option value="">Select a grade</option><option>Early years</option><option>Primary school</option><option>Middle school</option><option>Secondary school</option><option>Not sure yet</option></select></label><label>What can we help with?<input name="message" value={form.message} onChange={update} placeholder="Tell us a little more" /></label></div><div className="form-footer"><p>By submitting, you agree that Jigisha may use these details to respond to your enquiry.</p><button className="button button-blue" type="submit" disabled={status === 'loading'}>{status === 'loading' ? 'Sending…' : 'Send enquiry'} <Icon name="arrow-up-right" size={15} /></button></div></form>
+  if (status === 'success') return <div className="form-success reveal"><span className="success-mark"><Icon name="check" size={25} /></span><p className="eyebrow"><span></span> Thank you</p><h3>Your enquiry has been received.</h3><p>The school team will contact you with the next steps.</p><button type="button" className="text-link" onClick={() => setStatus('idle')}>Send another enquiry <Icon name="arrow-up-right" size={15} /></button></div>
+  return <form id="enquiry-form" className="enquiry-form reveal delay-one" onSubmit={submit} noValidate><div className="form-heading"><span>Enquiry form</span><small>All fields marked * are required</small></div>{status === 'error' ? <p className="form-error" role="alert">Please check the required fields and try again. If the problem continues, contact the school directly.</p> : null}<div className="form-row"><label>Parent / guardian name *<input required minLength="2" name="parent" value={form.parent} onChange={update} placeholder="Your full name" /></label><label>Student name *<input required minLength="2" name="student" value={form.student} onChange={update} placeholder="Student's full name" /></label></div><div className="form-row"><label>Email address *<input required type="email" name="email" value={form.email} onChange={update} placeholder="you@example.com" /></label><label>Mobile number *<input required minLength="7" name="mobile" value={form.mobile} onChange={update} placeholder="Your mobile number" /></label></div><div className="form-row"><label>Grade / standard<select required name="grade" value={form.grade} onChange={update}><option value="">Select a grade</option><option>Early years</option><option>Primary school</option><option>Middle school</option><option>Secondary school</option><option>Not sure yet</option></select></label><label>What can we help with?<input name="message" value={form.message} onChange={update} placeholder="Tell us a little more" /></label></div><div className="form-footer"><p>By submitting, you agree that Jigisha may use these details to respond to your enquiry.</p><button className="button button-blue" type="submit" disabled={status === 'loading'}>{status === 'loading' ? 'Sending…' : 'Send enquiry'} <Icon name="arrow-up-right" size={15} /></button></div></form>
+}
+
+function ContactForm() {
+  const [status, setStatus] = useState('idle')
+  const [form, setForm] = useState({ name: '', email: '', message: '' })
+  const update = event => setForm(current => ({ ...current, [event.target.name]: event.target.value }))
+  const submit = async event => {
+    event.preventDefault()
+    const values = Object.fromEntries(Object.entries(form).map(([key, value]) => [key, value.trim()]))
+    if (values.name.length < 2 || !/^\S+@\S+\.\S+$/.test(values.email) || values.message.length < 5) { setStatus('error'); return }
+    setStatus('loading')
+    try { await submitContact(values); setForm({ name: '', email: '', message: '' }); setStatus('success') } catch { setStatus('error') }
+  }
+  if (status === 'success') return <div className="form-success"><span className="success-mark"><Icon name="check" size={25} /></span><p className="eyebrow"><span></span> Thank you</p><h3>Your message has been received.</h3><p>The school team will contact you with the next steps.</p><button type="button" className="text-link" onClick={() => setStatus('idle')}>Send another message <Icon name="arrow-up-right" size={15} /></button></div>
+  return <form id="contact-form" className="enquiry-form" onSubmit={submit} noValidate><div className="form-heading"><span>Contact form</span><small>All fields marked * are required</small></div>{status === 'error' ? <p className="form-error" role="alert">Please check the required fields and try again. If the problem continues, contact the school directly.</p> : null}<div className="form-row"><label>Your name *<input required minLength="2" name="name" value={form.name} onChange={update} placeholder="Your full name" /></label><label>Email address *<input required type="email" name="email" value={form.email} onChange={update} placeholder="you@example.com" /></label></div><label>How can we help? *<input required minLength="5" name="message" value={form.message} onChange={update} placeholder="Tell us a little more" /></label><div className="form-footer"><p>By submitting, you agree that Jigisha may use these details to respond to your message.</p><button className="button button-blue" type="submit" disabled={status === 'loading'}>{status === 'loading' ? 'Sending…' : 'Send message'} <Icon name="arrow-up-right" size={15} /></button></div></form>
 }
 
 function FaqItem({ question, answer, openByDefault }) {
@@ -204,7 +342,7 @@ function FaqItem({ question, answer, openByDefault }) {
 
 function InnerPage({ path }) {
   const config = pageConfig(path)
-  return <main className="inner-page"><section className="inner-hero section-dark"><div className="shell inner-hero-grid"><div><p className="eyebrow eyebrow-light"><span></span> Jigisha International School</p><h1>{config.title}<br /><i>{config.italic}</i></h1><p>{config.intro}</p></div><div className="inner-emblem"><img src={logo} alt="Jigisha International School official crest" loading="lazy" /><span>Establishing a place<br />to learn & belong</span></div></div></section><section className="section page-content"><div className="shell page-content-grid"><aside><p className="eyebrow"><span></span> Explore</p><nav>{['/about', '/academics', '/why-jigisha', '/admissions', '/student-life', '/gallery', '/achievements', '/news', '/contact'].map(href => <a className={path === href ? 'active' : ''} href={href} key={href}>{pageTitle(href)} <Icon name="arrow-up-right" size={14} /></a>)}</nav></aside><div className="page-main"><div className="page-visual"><div className="page-visual-rings"></div><img src={logo} alt="Official Jigisha International School crest" loading="lazy" /><span>{pageTitle(path)} / Jigisha</span></div>{config.blocks.map((block, index) => <div className="content-block reveal" key={index}>{block.type === 'heading' ? <h2>{block.text}</h2> : block.type === 'list' ? <div className="content-list">{block.items.map(item => <div key={item[0]}><span>{item[0]}</span><div><h3>{item[1]}</h3><p>{item[2]}</p></div></div>)}</div> : <p>{block.text}</p>}</div>)}{path === '/admissions' || path === '/contact' ? <div className="page-cta"><h3>Ready to start a conversation?</h3><p>Share your details and we&apos;ll help with the next step.</p><a className="button button-blue" href="/#enquiry">Open enquiry form <Icon name="arrow-up-right" size={15} /></a></div> : null}</div></div></section></main>
+  return <main className="inner-page"><section className="inner-hero section-dark"><div className="shell inner-hero-grid"><div><p className="eyebrow eyebrow-light"><span></span> Jigisha International School</p><h1>{config.title}<br /><i>{config.italic}</i></h1><p>{config.intro}</p></div><div className="inner-emblem"><img src={logo} alt="Jigisha International School official crest" loading="lazy" /><span>Establishing a place<br />to learn & belong</span></div></div></section><section className="section page-content"><div className="shell page-content-grid"><aside><p className="eyebrow"><span></span> Explore</p><nav>{['/about', '/academics', '/why-jigisha', '/admissions', '/student-life', '/gallery', '/achievements', '/news', '/contact'].map(href => <a className={path === href ? 'active' : ''} href={href} key={href}>{pageTitle(href)} <Icon name="arrow-up-right" size={14} /></a>)}</nav></aside><div className="page-main"><div className="page-visual"><div className="page-visual-rings"></div><img src={logo} alt="Official Jigisha International School crest" loading="lazy" /><span>{pageTitle(path)} / Jigisha</span></div>{config.blocks.map((block, index) => <div className="content-block reveal" id={block.id} key={index}>{block.type === 'heading' ? <h2>{block.text}</h2> : block.type === 'list' ? <div className="content-list">{block.items.map(item => <div key={item[0]}><span>{item[0]}</span><div><h3>{item[1]}</h3><p>{item[2]}</p></div></div>)}</div> : <p>{block.text}</p>}</div>)}{path === '/admissions' ? <div className="page-form-section"><EnquiryForm endpoint="admission" /></div> : null}{path === '/contact' ? <div className="page-form-section"><ContactForm /></div> : null}</div></div></section></main>
 }
 
 function Footer() {
@@ -215,11 +353,11 @@ function pageTitle(path) { return ({ '/about': 'About', '/academics': 'Academics
 
 function pageConfig(path) {
   const base = {
-    '/about': { title: 'A school shaped', italic: 'around possibility.', intro: 'A thoughtful beginning for learners, families and a community growing together.', blocks: [{ type: 'heading', text: 'Learning is more than a timetable.' }, { text: 'Jigisha International School is being built as a welcoming space for questions, confidence and connection. The school’s identity is rooted in the belief that education should help young people understand the world — and their place in it.' }, { type: 'list', items: pillars.map(([n, t, x]) => [n, t, x]) }] },
-    '/academics': { title: 'Make learning', italic: 'matter.', intro: 'An approach that values strong foundations, active thinking and the joy of finding things out.', blocks: [{ type: 'heading', text: 'The classroom is a starting point.' }, { text: 'Our academic approach is designed to keep learners engaged with ideas, people and the world around them. Detailed curriculum and grade information will be shared by the school team as it is confirmed.' }, { type: 'list', items: [['01', 'Foundations', 'Clear concepts, good questions and a steady sense of progress.'], ['02', 'Application', 'Learning that connects to real situations and meaningful problems.'], ['03', 'Expression', 'Multiple ways to explain, make, present and understand.']] }] },
-    '/why-jigisha': { title: 'The Jigisha', italic: 'difference.', intro: 'A human-scale idea of school: high expectations, open minds and a strong sense of belonging.', blocks: [{ type: 'heading', text: 'The best learning feels personal.' }, { text: 'We are creating an environment where learners are known, supported and encouraged to take meaningful responsibility. Our values are lived through the everyday details of school life.' }, { type: 'list', items: journey.slice(0, 4).map(card => [card.number, card.title, card.text]) }] },
-    '/admissions': { title: 'Your next step', italic: 'starts here.', intro: 'Tell us what you need to know and the school team will help you move forward with clarity.', blocks: [{ type: 'heading', text: 'A clear beginning matters.' }, { text: 'Admission availability, grade details and required documents are best confirmed directly with the school. Use the enquiry form to start a conversation with the team.' }, { type: 'list', items: [['01', 'Send an enquiry', 'Share a few details about your family and preferred grade.'], ['02', 'Speak with the school', 'Receive current information and guidance for your situation.'], ['03', 'Visit and decide', 'Take the next step when you have the clarity you need.']] }] },
-    '/student-life': { title: 'A full life', italic: 'at school.', intro: 'The moments between lessons matter too: friendships, movement, creativity and discovery.', blocks: [{ type: 'heading', text: 'There is more than one way to learn.' }, { text: 'Student life at Jigisha is designed to make space for collaboration, expression and active wellbeing. As programmes are confirmed, this space will grow with the school community.' }, { type: 'list', items: journey.map(card => [card.number, card.title, card.text]) }] },
+    '/about': { title: 'A school shaped', italic: 'around possibility.', intro: 'A thoughtful beginning for learners, families and a community growing together.', blocks: [{ id: 'about-school', type: 'heading', text: 'Learning is more than a timetable.' }, { id: 'vision-&-mission', text: 'Jigisha International School is being built as a welcoming space for questions, confidence and connection. The school’s identity is rooted in the belief that education should help young people understand the world — and their place in it.' }, { id: "principal's-message", type: 'list', items: pillars.map(([n, t, x]) => [n, t, x]) }] },
+    '/academics': { title: 'Make learning', italic: 'matter.', intro: 'An approach that values strong foundations, active thinking and the joy of finding things out.', blocks: [{ id: 'curriculum', type: 'heading', text: 'The classroom is a starting point.' }, { id: 'teaching-approach', text: 'Our academic approach is designed to keep learners engaged with ideas, people and the world around them. Detailed curriculum and grade information will be shared by the school team as it is confirmed.' }, { id: 'activities', type: 'list', items: [['01', 'Foundations', 'Clear concepts, good questions and a steady sense of progress.'], ['02', 'Application', 'Learning that connects to real situations and meaningful problems.'], ['03', 'Expression', 'Multiple ways to explain, make, present and understand.']] }] },
+    '/why-jigisha': { title: 'The Jigisha', italic: 'difference.', intro: 'A human-scale idea of school: high expectations, open minds and a strong sense of belonging.', blocks: [{ id: 'our-difference', type: 'heading', text: 'The best learning feels personal.' }, { id: 'school-values', text: 'We are creating an environment where learners are known, supported and encouraged to take meaningful responsibility. Our values are lived through the everyday details of school life.' }, { id: 'learning-spaces', type: 'list', items: journey.slice(0, 4).map(card => [card.number, card.title, card.text]) }] },
+    '/admissions': { title: 'Your next step', italic: 'starts here.', intro: 'Tell us what you need to know and the school team will help you move forward with clarity.', blocks: [{ id: 'admission-process', type: 'heading', text: 'A clear beginning matters.' }, { id: 'required-documents', text: 'Admission availability, grade details and required documents are best confirmed directly with the school. Use the enquiry form to start a conversation with the team.' }, { id: 'enquiry', type: 'list', items: [['01', 'Send an enquiry', 'Share a few details about your family and preferred grade.'], ['02', 'Speak with the school', 'Receive current information and guidance for your situation.'], ['03', 'Visit and decide', 'Take the next step when you have the clarity you need.']] }] },
+    '/student-life': { title: 'A full life', italic: 'at school.', intro: 'The moments between lessons matter too: friendships, movement, creativity and discovery.', blocks: [{ id: 'events', type: 'heading', text: 'There is more than one way to learn.' }, { id: 'sports', text: 'Student life at Jigisha is designed to make space for collaboration, expression and active wellbeing. As programmes are confirmed, this space will grow with the school community.' }, { id: 'arts-&-culture', type: 'list', items: journey.map(card => [card.number, card.title, card.text]) }] },
     '/gallery': { title: 'See Jigisha', italic: 'in focus.', intro: 'A visual journal of the spaces, people and moments that make a school feel like a community.', blocks: [{ type: 'heading', text: 'Our story, pictured with care.' }, { text: 'The Jigisha school building photograph currently anchors this visual journal. Additional verified views can be added as they are shared.' }, { type: 'list', items: [['01', 'Campus', 'The places where everyday learning happens.'], ['02', 'Community', 'The people and moments that bring school life to colour.'], ['03', 'Celebration', 'The milestones, events and achievements we share.']] }] },
     '/achievements': { title: 'Every step', italic: 'counts.', intro: 'We will celebrate the milestones and moments that are meaningful to the Jigisha community.', blocks: [{ type: 'heading', text: 'A place for milestones.' }, { text: 'Verified achievements, awards and school milestones will be published here when ready. We will always keep this record accurate and useful for families.' }, { type: 'list', items: [['01', 'Learner growth', 'Recognising progress, effort and thoughtful contribution.'], ['02', 'Community moments', 'Celebrating the shared experiences that bring us together.']] }] },
     '/news': { title: "What's happening", italic: 'at Jigisha.', intro: 'Notes, announcements and stories from a school community taking shape.', blocks: [{ type: 'heading', text: 'The latest will be shared here.' }, { text: "School news and event updates will be published here when verified information is ready to share. For current information, please contact the school directly." }, { type: 'list', items: [['01', 'School updates', 'Important information for families and the wider community.'], ['02', 'Community stories', 'Small moments and big ideas from life at Jigisha.']] }] },

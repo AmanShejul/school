@@ -1,0 +1,8 @@
+.env
+backend/.env
+backend/jigisha.db
+__pycache__/
+*.py[cod]
+node_modules/.vite/
+dist/assets/index-*.js
+dist/assets/index-*.css

@@ -11,6 +11,12 @@ export const imageAssets = {
   galleryImages: ['/assets/hero/jigisha-school-enhanced.jpg'],
 }
 
+export const schoolLocation = {
+  name: 'Jigisha International School',
+  address: 'M-1 Jigisha, N-7, CIDCO, Chhatrapati Sambhajinagar, Maharashtra 431003, India',
+  mapsQuery: 'Jigisha International School, M-1 Jigisha, N-7, CIDCO, Chhatrapati Sambhajinagar, Maharashtra 431003, India',
+}
+
 export const schoolStats = [
   { label: 'Years of excellence', value: null, suffix: '' },
   { label: 'Learners', value: null, suffix: '+' },
@@ -18,19 +24,43 @@ export const schoolStats = [
   { label: 'Activities', value: null, suffix: '+' },
 ]
 
-export const facilities = [
-  { number: '01', title: 'Learning spaces', description: 'A considered place for focused learning.', icon: 'book', image: null, tone: 'facility-blue' },
-  { number: '02', title: 'Discovery', description: 'Room for questions, ideas and reflection.', icon: 'compass', image: null, tone: 'facility-orange' },
-  { number: '03', title: 'Exploration', description: 'A considered space for practical learning.', icon: 'flask', image: null, tone: 'facility-green' },
-  { number: '04', title: 'Movement', description: 'A considered space for an active school day.', icon: 'activity', image: null, tone: 'facility-navy' },
-  { number: '05', title: 'Making', description: 'Room to create, collaborate and express.', icon: 'palette', image: null, tone: 'facility-orange' },
-  { number: '06', title: 'Campus', description: 'The setting for everyday school life.', icon: 'building', image: null, tone: 'facility-blue' },
-]
-
-export const initiatives = [
-  { category: 'Learning', title: 'Ideas in motion', description: 'A space for verified learning stories and school initiatives.', image: null, link: '/academics', tone: 'initiative-blue' },
-  { category: 'Creativity', title: 'Making meaning', description: 'A place to share verified creative work and community initiatives.', image: null, link: '/student-life', tone: 'initiative-orange' },
-  { category: 'Wellbeing', title: 'Growing together', description: 'A space for verified activities that support a balanced school life.', image: null, link: '/student-life', tone: 'initiative-green' },
+export const learningSpaces = [
+  {
+    id: 'learning', number: '01', title: 'Learning spaces',
+    shortDescription: 'A place to learn, explore ideas and grow.',
+    description: '', details: [], image: null, gallery: [], icon: 'book',
+    tone: 'facility-blue', href: '/academics', cta: 'Explore learning',
+  },
+  {
+    id: 'discovery', number: '02', title: 'Discovery',
+    shortDescription: 'Questions, ideas and new ways to understand the world.',
+    description: '', details: [], image: null, gallery: [], icon: 'compass',
+    tone: 'facility-orange', href: '/academics', cta: 'Discover more',
+  },
+  {
+    id: 'exploration', number: '03', title: 'Exploration',
+    shortDescription: 'Opportunities to look closer, try things and keep learning.',
+    description: '', details: [], image: null, gallery: [], icon: 'flask',
+    tone: 'facility-green', href: '/academics', cta: 'Explore more',
+  },
+  {
+    id: 'movement', number: '04', title: 'Movement',
+    shortDescription: 'Active learning, play and a healthy rhythm through the school day.',
+    description: '', details: [], image: null, gallery: [], icon: 'activity',
+    tone: 'facility-navy', href: '/student-life', cta: 'Explore student life',
+  },
+  {
+    id: 'making', number: '05', title: 'Making',
+    shortDescription: 'Ideas take shape through creativity, practice and expression.',
+    description: '', details: [], image: null, gallery: [], icon: 'palette',
+    tone: 'facility-orange', href: '/student-life', cta: 'Explore creativity',
+  },
+  {
+    id: 'campus', number: '06', title: 'Campus',
+    shortDescription: 'The school environment where everyday learning happens.',
+    description: '', details: [], image: null, gallery: [], icon: 'building',
+    tone: 'facility-blue', href: '/gallery', cta: 'View the gallery',
+  },
 ]
 
 export const galleryVisuals = [
@@ -44,3 +74,6 @@ export const galleryVisuals = [
 
 // Keep this empty until verified school news or events are available.
 export const newsItems = []
+
+// Add only verified review objects here when they are approved for publication.
+export const reviews = []

@@ -57,6 +57,14 @@ export function getFAQ() {
   return request('/faq')
 }
 
+export function getReviews() {
+  return request('/reviews')
+}
+
+export function submitReview(payload) {
+  return request('/reviews', { method: 'POST', body: JSON.stringify(payload) })
+}
+
 export function getSchool() {
   return request('/school')
 }
@@ -95,4 +103,17 @@ export function updateAdminEnquiry(id, payload) {
 
 export function deleteAdminEnquiry(id) {
   return request(`/admin/enquiries/${id}`, { method: 'DELETE' })
+}
+
+export function getAdminReviews({ status = '' } = {}) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : ''
+  return request(`/admin/reviews${query}`)
+}
+
+export function updateAdminReview(id, payload) {
+  return request(`/admin/reviews/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+export function deleteAdminReview(id) {
+  return request(`/admin/reviews/${id}`, { method: 'DELETE' })
 }

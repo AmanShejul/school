@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useInView, useReducedMotion } from 'framer-motion'
-import { facilities, galleryVisuals, imageAssets, initiatives, newsItems, schoolStats } from './data/siteData'
-import { adminLogin, adminLogout, deleteAdminEnquiry, getAdminEnquiries, getAdminEnquiry, getAdminStats, getNews, submitAdmissionEnquiry, submitContact, submitEnquiry, updateAdminEnquiry } from './services/api'
+import { galleryVisuals, imageAssets, learningSpaces, newsItems, reviews, schoolLocation, schoolStats } from './data/siteData'
+import { adminLogin, adminLogout, deleteAdminEnquiry, deleteAdminReview, getAdminEnquiries, getAdminEnquiry, getAdminReviews, getAdminStats, getNews, getReviews, submitAdmissionEnquiry, submitContact, submitEnquiry, submitReview, updateAdminEnquiry, updateAdminReview } from './services/api'
 
 const logo = imageAssets.logo
 const heroImage = imageAssets.heroImage
@@ -52,7 +52,7 @@ const pillars = [
 ]
 
 const faqs = [
-  ['Where is Jigisha International School located?', 'Our school is located at M-1 Jigisha, N-7, CIDCO, Chhatrapati Sambhajinagar, Maharashtra 431003, India.'],
+  ['Where is Jigisha International School located?', `Our school is located at ${schoolLocation.address}.`],
   ['How can I enquire about admissions?', 'Use the enquiry form on this website. The school team can then share the current admission process and availability with you.'],
   ['Which grades does the school offer?', 'Grade availability is best confirmed directly with the school team. Submit an enquiry and we will help you find the right information.'],
   ['What information should I keep ready?', 'For a first enquiry, your parent name, student name, preferred grade, email and mobile number are enough.'],
@@ -154,6 +154,10 @@ function AdminLoginPage({ navigate }) {
 }
 
 function AdminDashboard({ navigate }) {
+  return <><EnquiryDashboard navigate={navigate} /><main className="admin-page admin-review-page"><div className="admin-shell"><AdminReviewsPanel navigate={navigate} /></div></main></>
+}
+
+function EnquiryDashboard({ navigate }) {
   const [stats, setStats] = useState(null)
   const [items, setItems] = useState([])
   const [total, setTotal] = useState(0)
@@ -197,6 +201,33 @@ function AdminDashboard({ navigate }) {
   return <main className="admin-page"><div className="admin-shell"><header className="admin-header"><div className="admin-header-brand"><span className="admin-brand-mark"><img src={logo} alt="" /></span><div><strong>Jigisha International School</strong><span>Administration</span></div></div><div className="admin-header-actions"><a href="/" onClick={event => { event.preventDefault(); navigate('/') }}>View website</a><button type="button" onClick={logout}>Log out</button></div></header><section className="admin-welcome"><div><p className="admin-eyebrow">School administration</p><h1>Enquiries</h1><p className="admin-muted">Review, follow up and keep every family conversation moving.</p></div><button type="button" className="admin-refresh" onClick={load}>Refresh <Icon name="arrow-up-right" size={14} /></button></section>{stats ? <div className="admin-stats-grid"><AdminStat label="Total enquiries" value={stats.total_enquiries} tone="blue" /><AdminStat label="New enquiries" value={stats.new_enquiries} tone="orange" /><AdminStat label="Contacted" value={stats.contacted_enquiries} tone="green" /><AdminStat label="Closed" value={stats.closed_enquiries} tone="navy" /></div> : null}<section className="admin-panel"><div className="admin-panel-head"><div><h2>Enquiry records</h2><span>{total} {total === 1 ? 'record' : 'records'}</span></div><div className="admin-filters"><label className="admin-search"><span className="sr-only">Search enquiries</span><input name="search" value={filters.search} onChange={updateFilter} placeholder="Search parent, student, email or mobile" /></label><label><span className="sr-only">Filter by grade</span><input name="grade" value={filters.grade} onChange={updateFilter} placeholder="Grade" /></label><label><span className="sr-only">Filter by status</span><select name="status" value={filters.status} onChange={updateFilter}><option value="">All statuses</option><option value="new">New</option><option value="contacted">Contacted</option><option value="closed">Closed</option></select></label></div></div>{error ? <p className="admin-alert" role="alert">{error}</p> : null}{loading ? <div className="admin-empty">Loading enquiries…</div> : items.length === 0 ? <div className="admin-empty"><strong>No enquiries yet.</strong><span>New parent enquiries will appear here.</span></div> : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Parent</th><th>Student</th><th>Grade</th><th>Email</th><th>Mobile</th><th>Status</th><th>Submitted</th><th>Actions</th></tr></thead><tbody>{items.map(item => <tr key={item.id}><td data-label="Parent"><strong>{item.parent}</strong></td><td data-label="Student">{item.student}</td><td data-label="Grade">{item.grade}</td><td data-label="Email">{item.email}</td><td data-label="Mobile">{item.mobile}</td><td data-label="Status"><select className={`admin-status-select status-${item.status}`} value={item.status} onChange={event => changeStatus(item.id, event.target.value)} aria-label={`Change status for ${item.parent}`}><option value="new">New</option><option value="contacted">Contacted</option><option value="closed">Closed</option></select></td><td data-label="Submitted">{formatAdminDate(item.created_at)}</td><td data-label="Actions"><div className="admin-row-actions"><button type="button" onClick={() => openDetail(item.id)}>View</button><button type="button" className="admin-delete" onClick={() => remove(item.id)}>Delete</button></div></td></tr>)}</tbody></table></div>}</section></div>{toast ? <div className="admin-toast" role="status">{toast}</div> : null}{selected ? <div className="admin-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSelected(null) }}><section className="admin-detail" role="dialog" aria-modal="true" aria-labelledby="admin-detail-title"><button type="button" className="admin-modal-close" onClick={() => setSelected(null)} aria-label="Close enquiry details"><Icon name="close" size={21} /></button><p className="admin-eyebrow">Enquiry #{selected.id}</p><h2 id="admin-detail-title">{selected.parent}</h2><div className="admin-detail-status"><span>Current status</span><select className={`admin-status-select status-${selected.status}`} value={selected.status} onChange={event => changeStatus(selected.id, event.target.value)}><option value="new">New</option><option value="contacted">Contacted</option><option value="closed">Closed</option></select></div><dl><div><dt>Student</dt><dd>{selected.student}</dd></div><div><dt>Email</dt><dd>{selected.email}</dd></div><div><dt>Mobile</dt><dd>{selected.mobile}</dd></div><div><dt>Grade</dt><dd>{selected.grade}</dd></div><div><dt>Submitted</dt><dd>{formatAdminDate(selected.created_at)}</dd></div><div className="admin-detail-message"><dt>Message</dt><dd>{selected.message || 'No message provided.'}</dd></div></dl><button type="button" className="admin-danger-button" onClick={() => remove(selected.id)}>Delete enquiry</button></section></div> : null}</main>
 }
 
+function AdminReviewsPanel({ navigate }) {
+  const [items, setItems] = useState([])
+  const [status, setStatus] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [selected, setSelected] = useState(null)
+
+  const load = async () => {
+    setLoading(true)
+    setError('')
+    try { const payload = await getAdminReviews({ status }); setItems(payload.items || []) } catch (requestError) { if (requestError.status === 401) navigate('/admin/login'); else setError('Unable to load reviews.') } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [status])
+
+  const changeStatus = async (id, nextStatus) => {
+    try { await updateAdminReview(id, { status: nextStatus }); await load(); setSelected(current => current?.id === id ? { ...current, status: nextStatus } : current) } catch (requestError) { if (requestError.status === 401) navigate('/admin/login'); else setError('Unable to update this review.') }
+  }
+
+  const remove = async id => {
+    if (!window.confirm('Delete this review permanently?')) return
+    try { await deleteAdminReview(id); setSelected(current => current?.id === id ? null : current); await load() } catch (requestError) { if (requestError.status === 401) navigate('/admin/login'); else setError('Unable to delete this review.') }
+  }
+
+  return <section id="reviews" className="admin-panel admin-review-panel"><div className="admin-panel-head"><div><p className="admin-eyebrow">Community moderation</p><h2>Reviews</h2><span>{items.length} {items.length === 1 ? 'review' : 'reviews'}</span></div><div className="admin-review-toolbar"><button type="button" className="admin-refresh" onClick={load}>Refresh <Icon name="arrow-up-right" size={14} /></button><label><span className="sr-only">Filter reviews by status</span><select value={status} onChange={event => setStatus(event.target.value)}><option value="">All reviews</option><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select></label></div></div>{error ? <p className="admin-alert" role="alert">{error}</p> : null}{loading ? <div className="admin-empty">Loading reviewsâ€¦</div> : items.length === 0 ? <div className="admin-empty"><strong>No reviews found.</strong><span>New review submissions will appear here for approval.</span></div> : <div className="admin-table-wrap"><table className="admin-table admin-review-table"><thead><tr><th>Name</th><th>Role</th><th>Rating</th><th>Review</th><th>Status</th><th>Submitted</th><th>Actions</th></tr></thead><tbody>{items.map(item => <tr key={item.id} className={item.status === 'pending' ? 'admin-review-pending' : ''}><td data-label="Name"><strong>{item.name}</strong></td><td data-label="Role">{item.role}</td><td data-label="Rating"><span className="admin-review-stars" aria-label={`${item.rating} out of 5 stars`}>{'★'.repeat(item.rating)}</span></td><td data-label="Review"><span className="admin-review-text">{item.review}</span></td><td data-label="Status"><span className={`admin-review-status review-status-${item.status}`}>{item.status}</span></td><td data-label="Submitted">{formatAdminDate(item.created_at)}</td><td data-label="Actions"><div className="admin-row-actions admin-review-actions"><button type="button" onClick={() => setSelected(item)}>View</button>{item.status !== 'approved' ? <button type="button" onClick={() => changeStatus(item.id, 'approved')}>Approve</button> : null}{item.status !== 'rejected' ? <button type="button" onClick={() => changeStatus(item.id, 'rejected')}>Reject</button> : null}<button type="button" className="admin-delete" onClick={() => remove(item.id)}>Delete</button></div></td></tr>)}</tbody></table></div>}{selected ? <div className="admin-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSelected(null) }}><section className="admin-detail admin-review-detail" role="dialog" aria-modal="true" aria-labelledby="admin-review-detail-title"><button type="button" className="admin-modal-close" onClick={() => setSelected(null)} aria-label="Close review details"><Icon name="close" size={21} /></button><p className="admin-eyebrow">Review #{selected.id}</p><h2 id="admin-review-detail-title">{selected.name}</h2><div className="admin-detail-status"><span>{selected.role} Â· {selected.rating} / 5</span><span className={`admin-review-status review-status-${selected.status}`}>{selected.status}</span></div><p className="admin-review-detail-copy">{selected.review}</p><p className="admin-review-detail-date">Submitted {formatAdminDate(selected.created_at)}</p><div className="admin-row-actions"><button type="button" onClick={() => changeStatus(selected.id, 'approved')}>Approve</button><button type="button" onClick={() => changeStatus(selected.id, 'rejected')}>Reject</button><button type="button" className="admin-delete" onClick={() => remove(selected.id)}>Delete</button></div></section></div> : null}</section>
+}
+
 function AdminStat({ label, value, tone }) {
   return <div className={`admin-stat admin-stat-${tone}`}><span>{label}</span><strong>{value ?? '—'}</strong><small>Verified database total</small></div>
 }
@@ -224,13 +255,15 @@ function Home() {
     <StatsSection />
 
     <section className="section journey-section section-paper"><div className="shell"><div className="section-head split-head"><div><p className="eyebrow"><span></span> The student journey</p><h2>Many ways to <i>shine.</i></h2></div><p>Learning is not one straight line. It is a collection of moments, questions and discoveries that help each learner become more fully themselves.</p></div><div className="journey-grid">{journey.map(card => <article className={`journey-card ${card.color} reveal`} key={card.number}><div className="journey-art" aria-hidden="true"><span>J</span></div><div className="card-top"><span>{card.number}</span><Icon name="arrow-up-right" size={17} /></div><div><p className="card-kicker">{card.kicker}</p><h3>{card.title}</h3><p>{card.text}</p></div></article>)}</div><a className="button button-outline" href="/student-life">Enter the student journey <Icon name="arrow-up-right" size={15} /></a></div></section>
-    <FacilitiesSection />
+    <LearningSpacesSection />
 
     <section className="section values-section section-dark"><div className="shell values-grid"><div className="values-intro reveal"><p className="eyebrow eyebrow-light"><span></span> What guides us</p><h2>A strong start for a <i>bright</i> tomorrow.</h2><p>Our values are simple, human and designed to be lived every day — in classrooms, on the playground and in the way we care for one another.</p><div className="values-seal"><img src={logo} alt="Official Jigisha International School crest" /><span>Identity in<br /><strong>motion</strong></span></div><a className="text-link light-link" href="/why-jigisha">Why Jigisha <Icon name="arrow-up-right" size={15} /></a></div><div className="pillars-grid">{pillars.map(([number, title, text]) => <div className="pillar reveal" key={number}><span>{number}</span><h3>{title}</h3><p>{text}</p></div>)}</div></div></section>
 
-    <section className="section enquiry-section" id="enquiry"><div className="shell enquiry-grid"><div className="enquiry-copy reveal"><p className="eyebrow"><span></span> Begin a conversation</p><h2>Let&apos;s find the<br /><i>right next step.</i></h2><p>Tell us a little about your family and the school team will get back to you with the information you need.</p><div className="enquiry-actions"><a className="button button-outline" href="/admissions">Explore Admissions <Icon name="arrow-up-right" size={15} /></a><a className="button button-orange" href="#enquiry-form">Enquire Now <Icon name="arrow-up-right" size={15} /></a></div><div className="contact-note"><span className="note-icon"><Icon name="pin" size={16} /></span><div><strong>Visit the school</strong><p>M-1 Jigisha, N-7, CIDCO<br />Chhatrapati Sambhajinagar<br />Maharashtra 431003, India</p></div></div></div><EnquiryForm /></div></section>
+    <section className="section enquiry-section" id="enquiry"><div className="shell enquiry-grid"><div className="enquiry-copy reveal"><p className="eyebrow"><span></span> Begin a conversation</p><h2>Let&apos;s find the<br /><i>right next step.</i></h2><p>Tell us a little about your family and the school team will get back to you with the information you need.</p><div className="enquiry-actions"><a className="button button-outline" href="/admissions">Explore Admissions <Icon name="arrow-up-right" size={15} /></a><a className="button button-orange" href="#enquiry-form">Enquire Now <Icon name="arrow-up-right" size={15} /></a></div><div className="contact-note"><span className="note-icon"><Icon name="pin" size={16} /></span><div><strong>Visit the school</strong><p>{schoolLocation.address}</p></div></div></div><EnquiryForm /></div></section>
 
-    <InitiativesSection /><AchievementsSection /><GallerySection /><NewsSection />
+    <AchievementsSection /><GallerySection />
+    <ReviewsSection />
+    <NewsSection />
 
     <section className="section faq-section"><div className="shell faq-grid"><div className="faq-intro reveal"><p className="eyebrow"><span></span> Common questions</p><h2>Good to <i>know.</i></h2><p>Can&apos;t find what you&apos;re looking for? Our enquiry form is the quickest way to start a conversation.</p><a className="text-link" href="/contact">Ask us directly <Icon name="arrow-up-right" size={15} /></a></div><div className="faq-list">{faqs.map(([question, answer], index) => <FaqItem key={question} question={question} answer={answer} openByDefault={index === 0} />)}</div></div></section>
     <ContactSection />
@@ -255,12 +288,8 @@ function StatNumber({ value }) {
   return <motion.span initial={reduceMotion ? false : { opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: .5 }}>{value}</motion.span>
 }
 
-function FacilitiesSection() {
-  return <section className="section facilities-section"><div className="shell"><div className="section-head split-head"><div><p className="eyebrow"><span></span> Spaces for growth</p><h2>Room to <i>become.</i></h2></div><p>A considered visual index for learning, discovery, movement and making.</p></div><div className="facilities-grid">{facilities.map((facility, index) => <Reveal className={`facility-card ${facility.tone}`} delay={index * .07} key={facility.number}><div className="facility-art">{facility.image ? <img className="facility-image" src={facility.image} alt={facility.title} loading="lazy" /> : <div className="facility-icon"><Icon name={facility.icon || 'sparkle'} size={34} /></div>}<span>{facility.number}</span><div className="facility-orbit"></div><div className="facility-orbit small"></div><b>J</b></div><div className="facility-copy"><h3>{facility.title}</h3><p>{facility.description}</p><a href="/gallery">View space <Icon name="arrow-up-right" size={15} /></a></div></Reveal>)}</div></div></section>
-}
-
-function InitiativesSection() {
-  return <section className="section initiatives-section section-dark"><div className="shell"><div className="section-head split-head"><div><p className="eyebrow eyebrow-light"><span></span> Initiatives & programmes</p><h2>Ideas in <i>motion.</i></h2></div><p>Verified Jigisha initiatives and programmes will be shared here as they are confirmed.</p></div><div className="initiative-grid">{initiatives.map((initiative, index) => <Reveal className={`initiative-card ${initiative.tone}`} delay={index * .08} key={initiative.title}><div className="initiative-graphic">{initiative.image ? <img className="initiative-image" src={initiative.image} alt="" loading="lazy" /> : null}<span>0{index + 1}</span><div></div></div><div><p className="card-kicker">{initiative.category}</p><h3>{initiative.title}</h3><p>{initiative.description}</p><a className="text-link light-link" href={initiative.link}>Explore <Icon name="arrow-up-right" size={15} /></a></div></Reveal>)}</div></div></section>
+function LearningSpacesSection() {
+  return <section className="section facilities-section"><div className="shell"><div className="section-head split-head"><div><p className="eyebrow"><span></span> Learning spaces</p><h2>Places to <i>learn.</i></h2></div><p>A starting point for the learning, discovery, movement and making that shape everyday school life.</p></div><div className="facilities-grid">{learningSpaces.map((space, index) => <Reveal className={`facility-card ${space.tone}`} delay={index * .07} key={space.id}><div className="facility-art">{space.image ? <img className="facility-image" src={space.image} alt={space.title} loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : <div className="facility-icon"><Icon name={space.icon || 'sparkle'} size={34} /></div>}<span>{space.number}</span><div className="facility-orbit"></div><div className="facility-orbit small"></div><b>J</b>{space.gallery?.length ? <div className="facility-gallery" aria-hidden="true">{space.gallery.slice(0, 3).map((image) => <img key={image} src={image} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} />)}</div> : null}</div><div className="facility-copy"><h3>{space.title}</h3>{space.shortDescription ? <p>{space.shortDescription}</p> : null}{space.description ? <p className="facility-description">{space.description}</p> : null}{space.details?.length ? <ul className="facility-details">{space.details.map((detail) => <li key={detail}>{detail}</li>)}</ul> : null}{space.href && space.cta ? <a href={space.href}>{space.cta} <Icon name="arrow-up-right" size={15} /></a> : null}</div></Reveal>)}</div></div></section>
 }
 
 function AchievementsSection() {
@@ -294,8 +323,104 @@ function NewsSection() {
   return <section className="section news-section"><div className="shell"><div className="section-head split-head"><div><p className="eyebrow"><span></span> News & events</p><h2>From the <i>community.</i></h2></div><p>School news and event updates will appear here.</p></div>{items.length ? <div className="news-grid">{items.map((item, index) => <Reveal className="news-card" delay={index * .07} key={item.title}><div className={`news-art news-art-${(index % 3) + 1}`}>{item.image ? <img src={item.image} alt="" loading="lazy" /> : null}<span>{String(index + 1).padStart(2, '0')}</span><b>J</b></div><div className="news-copy"><div><small>{item.date}</small><small>{item.category}</small></div><h3>{item.title}</h3><p>{item.text || item.description}</p><a href="/news">Read more <Icon name="arrow-up-right" size={15} /></a></div></Reveal>)}</div> : <div className="news-empty"><span className="news-empty-mark"><Icon name="sparkle" size={27} /></span><div><p className="eyebrow"><span></span> News & events</p><h3>School news and event updates will appear here.</h3><p>Verified announcements and community stories will be shared here when ready.</p></div><a className="text-link" href="/contact">Contact the school <Icon name="arrow-up-right" size={15} /></a></div>}</div></section>
 }
 
+function ReviewsSection() {
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [modalOpen, setModalOpen] = useState(false)
+
+  useEffect(() => {
+    getReviews().then(payload => setItems(payload.items || [])).catch(() => undefined).finally(() => setLoading(false))
+  }, [])
+
+  const closeModal = () => setModalOpen(false)
+  return <section className="section reviews-section" id="reviews" aria-labelledby="reviews-title"><div className="shell"><div className="section-head split-head reviews-header"><div><p className="eyebrow"><span></span> Community voices</p><h2 id="reviews-title">Words from our <i>community.</i></h2></div><div className="reviews-header-side"><p>Verified experiences from the Jigisha community will be shared here.</p><button type="button" className="button button-orange" onClick={() => setModalOpen(true)}>Leave a Review <Icon name="arrow-up-right" size={15} /></button></div></div>{items.length ? <div className="reviews-grid">{items.map(review => <ReviewCard review={review} key={review.id} />)}</div> : <div className="reviews-empty"><div className="reviews-quote" aria-hidden="true">“</div><div><h3>{loading ? 'Loading community voices.' : 'Community voices will appear here.'}</h3><p>Verified experiences from Jigisha families, students and alumni will be shared as they become available.</p><button type="button" className="button button-orange" onClick={() => setModalOpen(true)}>Leave a Review <Icon name="arrow-up-right" size={15} /></button></div></div>}</div><ReviewSubmissionModal open={modalOpen} onClose={closeModal} /></section>
+}
+
+function LegacyReviewsSection() {
+  const [reviewIndex, setReviewIndex] = useState(0)
+  const [visibleCount, setVisibleCount] = useState(1)
+  const reduceMotion = useReducedMotion()
+  const hasReviews = reviews.length > 0
+  const canNavigate = reviews.length > visibleCount
+
+  useEffect(() => {
+    const updateVisibleCount = () => {
+      const nextCount = window.matchMedia('(min-width: 1100px)').matches
+        ? 3
+        : window.matchMedia('(min-width: 680px)').matches ? 2 : 1
+      setVisibleCount(nextCount)
+      setReviewIndex(current => Math.min(current, Math.max(0, reviews.length - nextCount)))
+    }
+
+    updateVisibleCount()
+    window.addEventListener('resize', updateVisibleCount)
+    return () => window.removeEventListener('resize', updateVisibleCount)
+  }, [])
+
+  const visibleReviews = hasReviews
+    ? Array.from({ length: Math.min(visibleCount, reviews.length) }, (_, offset) => reviews[(reviewIndex + offset) % reviews.length])
+    : []
+
+  const moveReviews = (direction) => {
+    if (!canNavigate) return
+    setReviewIndex(current => (current + direction + reviews.length) % reviews.length)
+  }
+
+  return <section className="section reviews-section" id="reviews" aria-labelledby="reviews-title"><div className="shell"><div className="section-head split-head reviews-header"><div><p className="eyebrow"><span></span> Community voices</p><h2 id="reviews-title">Words from our <i>community.</i></h2></div><p>Verified experiences from the Jigisha community will be shared here.</p></div>{hasReviews ? <div className="reviews-carousel"><div className="reviews-carousel-head"><span>{reviews.length} {reviews.length === 1 ? 'verified experience' : 'verified experiences'}</span>{canNavigate ? <div className="review-controls"><button type="button" onClick={() => moveReviews(-1)} aria-label="Previous review"><Icon name="chevron-left" size={18} /></button><button type="button" onClick={() => moveReviews(1)} aria-label="Next review"><Icon name="chevron-right" size={18} /></button></div> : null}</div><AnimatePresence initial={false} mode="wait"><motion.div className="reviews-grid" key={`${reviewIndex}-${visibleCount}`} initial={reduceMotion ? false : { opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} exit={reduceMotion ? undefined : { opacity: 0, x: -18 }} transition={reduceMotion ? { duration: 0 } : { duration: .28, ease: 'easeOut' }}>{visibleReviews.map((review, index) => <ReviewCard review={review} key={review.id || `${review.name}-${index}`} />)}</motion.div></AnimatePresence></div> : <div className="reviews-empty"><div className="reviews-quote" aria-hidden="true">“</div><div><h3>Community voices will appear here.</h3><p>Verified experiences from Jigisha families, students and alumni will be added as they become available.</p></div></div>}</div></section>
+}
+
+const reviewRoles = ['Student', 'Parent', 'Alumni', 'Teacher', 'Other']
+const emptyReviewForm = { name: '', role: '', rating: 0, review: '', consent: false }
+
+function ReviewSubmissionModal({ open, onClose }) {
+  const [form, setForm] = useState(emptyReviewForm)
+  const [errors, setErrors] = useState({})
+  const [status, setStatus] = useState('idle')
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onKeyDown = event => { if (event.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [open, onClose])
+
+  if (!open) return null
+
+  const update = event => setForm(current => ({ ...current, [event.target.name]: event.target.type === 'checkbox' ? event.target.checked : event.target.value }))
+  const closeAndReset = () => { setForm(emptyReviewForm); setErrors({}); setStatus('idle'); onClose() }
+  const submit = async event => {
+    event.preventDefault()
+    const values = { ...form, name: form.name.trim(), review: form.review.trim() }
+    const nextErrors = {}
+    if (values.name.length < 2) nextErrors.name = 'Please enter your name.'
+    if (!reviewRoles.includes(values.role)) nextErrors.role = 'Please choose a role.'
+    if (!values.rating) nextErrors.rating = 'Please choose a rating.'
+    if (values.review.length < 10) nextErrors.review = 'Please write at least 10 characters.'
+    if (!values.consent) nextErrors.consent = 'Please confirm this is your genuine experience.'
+    if (Object.keys(nextErrors).length) { setErrors(nextErrors); return }
+    setErrors({})
+    setStatus('loading')
+    try { await submitReview(values); setForm(emptyReviewForm); setStatus('success') } catch (error) { setStatus(error.status === 422 ? 'validation-error' : 'error') }
+  }
+
+  return <div className="review-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeAndReset() }}><section className="review-modal" role="dialog" aria-modal="true" aria-labelledby="review-modal-title"><button type="button" className="review-modal-close" onClick={closeAndReset} aria-label="Close review form"><Icon name="close" size={22} /></button>{status === 'success' ? <div className="review-success"><span className="success-mark"><Icon name="check" size={25} /></span><p className="eyebrow"><span></span> Thank you</p><h2 id="review-modal-title">Your review has been submitted.</h2><p>Thank you! Your review has been submitted and will appear after approval.</p><button type="button" className="button button-orange" onClick={closeAndReset}>Close</button></div> : <><p className="eyebrow"><span></span> Community voices</p><h2 id="review-modal-title">Leave a review.</h2><p className="review-modal-intro">Your review will be checked by the school team before it is shared publicly.</p><form className="review-form" onSubmit={submit} noValidate><label>Name *<input name="name" value={form.name} onChange={update} maxLength={120} autoComplete="name" /></label>{errors.name ? <p className="review-form-error">{errors.name}</p> : null}<label>Role *<select name="role" value={form.role} onChange={update}><option value="">Choose a role</option>{reviewRoles.map(role => <option value={role} key={role}>{role}</option>)}</select></label>{errors.role ? <p className="review-form-error">{errors.role}</p> : null}<fieldset><legend>Rating *</legend><div className="review-rating-input" role="radiogroup" aria-label="Review rating">{[1, 2, 3, 4, 5].map(value => <button type="button" className={form.rating >= value ? 'selected' : ''} onClick={() => setForm(current => ({ ...current, rating: value }))} aria-label={`${value} star${value === 1 ? '' : 's'}`} aria-pressed={form.rating === value} key={value}>★</button>)}</div></fieldset>{errors.rating ? <p className="review-form-error">{errors.rating}</p> : null}<label>Review *<textarea name="review" value={form.review} onChange={update} maxLength={2000} rows={5} placeholder="Share your genuine experience" /></label><div className="review-character-count">{form.review.length} / 2000</div>{errors.review ? <p className="review-form-error">{errors.review}</p> : null}<label className="review-consent"><input type="checkbox" name="consent" checked={form.consent} onChange={update} /> <span>I confirm that this review reflects my genuine experience.</span></label>{errors.consent ? <p className="review-form-error">{errors.consent}</p> : null}{status === 'error' || status === 'validation-error' ? <p className="review-form-error" role="alert">We couldn’t submit your review. Please check the form and try again.</p> : null}<button type="submit" className="button button-orange review-submit" disabled={status === 'loading'}>{status === 'loading' ? 'Submitting…' : 'Submit review'} <Icon name="arrow-up-right" size={15} /></button></form></>}</section></div>
+}
+
+function ReviewCard({ review }) {
+  const rating = Number(review.rating)
+  const hasRating = Number.isFinite(rating) && rating > 0
+  const image = review.image
+
+  return <article className="review-card"><div className="review-card-top"><span className="review-quote" aria-hidden="true">&ldquo;</span>{hasRating ? <span className="review-rating" aria-label={`Rated ${rating} out of 5`}>{Array.from({ length: Math.min(5, Math.round(rating)) }, (_, index) => <span key={index} aria-hidden="true">★</span>)}</span> : null}</div><blockquote>{review.review}</blockquote><footer className="review-author">{image ? <img className="review-author-image" src={image} alt={`${review.name} profile`} loading="lazy" /> : <span className="review-author-placeholder" aria-hidden="true">J</span>}<cite><strong>{review.name}</strong>{review.role ? <span>{review.role}</span> : null}</cite></footer></article>
+}
+
 function ContactSection() {
-  return <section className="contact-section section-dark"><div className="shell contact-grid"><div><p className="eyebrow eyebrow-light"><span></span> Visit Jigisha</p><h2>Find your way<br /><i>to us.</i></h2><p className="contact-lead">Jigisha International School<br />M-1 Jigisha, N-7, CIDCO<br />Chhatrapati Sambhajinagar<br />Maharashtra 431003, India</p><a className="button button-orange" href="/contact">Contact the school <Icon name="arrow-up-right" size={15} /></a></div><div className="map-card"><div className="map-grid-lines"></div><div className="map-pin"><span>J</span></div><div className="map-label">N-7 · CIDCO<br /><strong>Jigisha International School</strong></div><span className="map-caption">Map integration ready</span></div></div></section>
+  const encodedQuery = encodeURIComponent(schoolLocation.mapsQuery)
+  const mapEmbedUrl = `https://www.google.com/maps?q=${encodedQuery}&output=embed`
+  const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodedQuery}`
+  const mapsSearchUrl = `https://www.google.com/maps/search/?api=1&query=${encodedQuery}`
+
+  return <section className="contact-section section-dark"><div className="shell contact-grid"><div><p className="eyebrow eyebrow-light"><span></span> Visit Jigisha</p><h2>Find your way<br /><i>to us.</i></h2><p className="contact-lead"><strong>{schoolLocation.name}</strong><br />{schoolLocation.address}</p><div className="location-actions"><a className="button button-orange" href={directionsUrl} target="_blank" rel="noopener noreferrer">Get Directions <Icon name="arrow-up-right" size={15} /></a><a className="text-link light-link" href={mapsSearchUrl} target="_blank" rel="noopener noreferrer">Open in Google Maps <Icon name="arrow-up-right" size={15} /></a></div></div><div className="map-card"><iframe className="map-embed" src={mapEmbedUrl} title={`Google Maps location for ${schoolLocation.name}`} aria-label={`Map showing ${schoolLocation.name} at ${schoolLocation.address}`} loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen></iframe></div></div></section>
 }
 
 const emptyEnquiry = { parent: '', student: '', email: '', mobile: '', grade: '', message: '' }
@@ -346,7 +471,7 @@ function InnerPage({ path }) {
 }
 
 function Footer() {
-  return <footer className="site-footer"><div className="shell footer-top"><div className="footer-brand"><a className="brand brand-footer" href="/"><span className="brand-mark"><img src={logo} alt="" /></span><span className="brand-copy"><strong>Jigisha</strong><em>International School</em></span></a><p>A place to learn with curiosity, grow with confidence and belong with purpose.</p></div><div className="footer-column"><h4>Explore</h4><a href="/about">About school</a><a href="/academics">Academics</a><a href="/why-jigisha">Why Jigisha</a><a href="/admissions">Admissions</a></div><div className="footer-column"><h4>Discover</h4><a href="/student-life">Student life</a><a href="/gallery">Gallery</a><a href="/achievements">Achievements</a><a href="/news">News & events</a></div><div className="footer-column footer-address"><h4>Find us</h4><p>M-1 Jigisha, N-7, CIDCO<br />Chhatrapati Sambhajinagar<br />Maharashtra 431003, India</p><a href="/contact">Contact the school <Icon name="arrow-up-right" size={15} /></a></div></div><div className="shell footer-bottom"><span>© {new Date().getFullYear()} Jigisha International School</span><span>Made for curious minds <b><Icon name="sparkle" size={14} /></b></span><span><a href="/">Privacy</a> · <a href="/">Terms</a></span></div></footer>
+  return <footer className="site-footer"><div className="shell footer-top"><div className="footer-brand"><a className="brand brand-footer" href="/"><span className="brand-mark"><img src={logo} alt="" /></span><span className="brand-copy"><strong>Jigisha</strong><em>International School</em></span></a><p>A place to learn with curiosity, grow with confidence and belong with purpose.</p></div><div className="footer-column"><h4>Explore</h4><a href="/about">About school</a><a href="/academics">Academics</a><a href="/why-jigisha">Why Jigisha</a><a href="/admissions">Admissions</a></div><div className="footer-column"><h4>Discover</h4><a href="/student-life">Student life</a><a href="/gallery">Gallery</a><a href="/achievements">Achievements</a><a href="/news">News & events</a></div><div className="footer-column footer-address"><h4>Find us</h4><p>{schoolLocation.name}<br />{schoolLocation.address}</p><a href="/contact">Contact the school <Icon name="arrow-up-right" size={15} /></a></div></div><div className="shell footer-bottom"><span>© {new Date().getFullYear()} Jigisha International School</span><span>Made for curious minds <b><Icon name="sparkle" size={14} /></b></span><span><a href="/">Privacy</a> · <a href="/">Terms</a></span></div></footer>
 }
 
 function pageTitle(path) { return ({ '/about': 'About', '/academics': 'Academics', '/why-jigisha': 'Why Jigisha', '/admissions': 'Admissions', '/student-life': 'Student life', '/gallery': 'Gallery', '/achievements': 'Achievements', '/news': 'News', '/contact': 'Contact' })[path] || 'Jigisha' }
@@ -361,7 +486,7 @@ function pageConfig(path) {
     '/gallery': { title: 'See Jigisha', italic: 'in focus.', intro: 'A visual journal of the spaces, people and moments that make a school feel like a community.', blocks: [{ type: 'heading', text: 'Our story, pictured with care.' }, { text: 'The Jigisha school building photograph currently anchors this visual journal. Additional verified views can be added as they are shared.' }, { type: 'list', items: [['01', 'Campus', 'The places where everyday learning happens.'], ['02', 'Community', 'The people and moments that bring school life to colour.'], ['03', 'Celebration', 'The milestones, events and achievements we share.']] }] },
     '/achievements': { title: 'Every step', italic: 'counts.', intro: 'We will celebrate the milestones and moments that are meaningful to the Jigisha community.', blocks: [{ type: 'heading', text: 'A place for milestones.' }, { text: 'Verified achievements, awards and school milestones will be published here when ready. We will always keep this record accurate and useful for families.' }, { type: 'list', items: [['01', 'Learner growth', 'Recognising progress, effort and thoughtful contribution.'], ['02', 'Community moments', 'Celebrating the shared experiences that bring us together.']] }] },
     '/news': { title: "What's happening", italic: 'at Jigisha.', intro: 'Notes, announcements and stories from a school community taking shape.', blocks: [{ type: 'heading', text: 'The latest will be shared here.' }, { text: "School news and event updates will be published here when verified information is ready to share. For current information, please contact the school directly." }, { type: 'list', items: [['01', 'School updates', 'Important information for families and the wider community.'], ['02', 'Community stories', 'Small moments and big ideas from life at Jigisha.']] }] },
-    '/contact': { title: "Let's talk", italic: 'about school.', intro: "We're here to help with the questions that matter to your family.", blocks: [{ type: 'heading', text: 'Find us in N-7, CIDCO.' }, { text: 'Jigisha International School\nM-1 Jigisha, N-7, CIDCO\nChhatrapati Sambhajinagar, Maharashtra 431003, India' }, { type: 'list', items: [['01', 'Enquiries', 'Use the enquiry form to share your questions and preferred contact details.'], ['02', 'School visit', 'Contact the school team to ask about the right time to visit.']] }] },
+    '/contact': { title: "Let's talk", italic: 'about school.', intro: "We're here to help with the questions that matter to your family.", blocks: [{ type: 'heading', text: 'Find us in N-7, CIDCO.' }, { text: `${schoolLocation.name}\n${schoolLocation.address}` }, { type: 'list', items: [['01', 'Enquiries', 'Use the enquiry form to share your questions and preferred contact details.'], ['02', 'School visit', 'Contact the school team to ask about the right time to visit.']] }] },
   }
   return base[path] || base['/about']
 }

@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 
 from .content import FAQ, GALLERY, NEWS, SCHOOL
-from .email import notify_new_enquiry
+from .email import notify_new_enquiry, notify_new_review
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
@@ -22,6 +22,8 @@ DB_PATH = BASE_DIR / "jigisha.db"
 SESSION_COOKIE = "jigisha_admin_session"
 SESSION_HOURS = 8
 STATUS_VALUES = ("new", "contacted", "closed")
+REVIEW_ROLE_VALUES = ("Student", "Parent", "Alumni", "Teacher", "Other")
+REVIEW_STATUS_VALUES = ("pending", "approved", "rejected")
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
@@ -61,6 +63,18 @@ class EnquiryStatusUpdate(BaseModel):
     status: str
 
 
+class ReviewSubmission(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    role: str = Field(min_length=1, max_length=20)
+    rating: int = Field(ge=1, le=5)
+    review: str = Field(min_length=10, max_length=2000)
+    consent: bool
+
+
+class ReviewStatusUpdate(BaseModel):
+    status: str
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -80,6 +94,15 @@ def init_db():
         connection.execute("""CREATE TABLE IF NOT EXISTS contact_messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL, email TEXT NOT NULL, message TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            role TEXT NOT NULL,
+            rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+            review TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
             created_at TEXT NOT NULL
         )""")
         connection.execute("""CREATE TABLE IF NOT EXISTS admin_sessions (
@@ -127,6 +150,15 @@ def get_enquiry(enquiry_id: int) -> dict:
     return row_to_dict(row)
 
 
+def get_review(review_id: int) -> dict:
+    with sqlite3.connect(DB_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute("SELECT id, name, role, rating, review, status, created_at FROM reviews WHERE id = ?", (review_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return row_to_dict(row)
+
+
 @app.get("/api/health")
 def health():
     return {"success": True, "status": "ok"}
@@ -150,6 +182,41 @@ def gallery():
 @app.get("/api/faq")
 def faq():
     return {"success": True, "items": FAQ}
+
+
+@app.post("/api/reviews", status_code=201)
+def create_review(payload: ReviewSubmission):
+    values = payload.model_dump()
+    if values["role"] not in REVIEW_ROLE_VALUES:
+        raise HTTPException(status_code=422, detail="Invalid review role")
+    if not values["consent"]:
+        raise HTTPException(status_code=422, detail="Consent is required")
+    created_at = utc_now().isoformat()
+    name = values["name"].strip()
+    review_text = values["review"].strip()
+    if len(name) < 2:
+        raise HTTPException(status_code=422, detail="Name is too short")
+    if len(review_text) < 10:
+        raise HTTPException(status_code=422, detail="Review is too short")
+    with sqlite3.connect(DB_PATH) as connection:
+        cursor = connection.execute(
+            "INSERT INTO reviews (name, role, rating, review, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)",
+            (name, values["role"], values["rating"], review_text, created_at),
+        )
+        review_id = cursor.lastrowid
+    review = {"id": review_id, "name": name, "role": values["role"], "rating": values["rating"], "review": review_text, "status": "pending", "created_at": created_at}
+    notify_new_review(review)
+    return {"success": True, "message": "Review submitted successfully"}
+
+
+@app.get("/api/reviews")
+def public_reviews():
+    with sqlite3.connect(DB_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            "SELECT id, name, role, rating, review, created_at FROM reviews WHERE status = 'approved' ORDER BY datetime(created_at) DESC, id DESC"
+        ).fetchall()
+    return {"success": True, "items": [row_to_dict(row) for row in rows]}
 
 
 def save_enquiry(payload: Enquiry) -> dict:
@@ -281,3 +348,38 @@ def delete_admin_enquiry(enquiry_id: int, _: str = Depends(require_admin)):
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Enquiry not found")
     return {"success": True, "message": "Enquiry deleted"}
+
+
+@app.get("/api/admin/reviews")
+def admin_reviews(status: Optional[str] = Query(default=None), _: str = Depends(require_admin)):
+    if status and status not in REVIEW_STATUS_VALUES:
+        raise HTTPException(status_code=422, detail="Invalid review status")
+    where = " WHERE status = ?" if status else ""
+    params = [status] if status else []
+    with sqlite3.connect(DB_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            f"SELECT id, name, role, rating, review, status, created_at FROM reviews{where} ORDER BY datetime(created_at) DESC, id DESC",
+            params,
+        ).fetchall()
+    return {"items": [row_to_dict(row) for row in rows], "total": len(rows), "status": status or "all"}
+
+
+@app.patch("/api/admin/reviews/{review_id}")
+def update_admin_review(review_id: int, payload: ReviewStatusUpdate, _: str = Depends(require_admin)):
+    if payload.status not in REVIEW_STATUS_VALUES:
+        raise HTTPException(status_code=422, detail="Invalid review status")
+    with sqlite3.connect(DB_PATH) as connection:
+        cursor = connection.execute("UPDATE reviews SET status = ? WHERE id = ?", (payload.status, review_id))
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return get_review(review_id)
+
+
+@app.delete("/api/admin/reviews/{review_id}")
+def delete_admin_review(review_id: int, _: str = Depends(require_admin)):
+    with sqlite3.connect(DB_PATH) as connection:
+        cursor = connection.execute("DELETE FROM reviews WHERE id = ?", (review_id,))
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Review not found")
+    return {"success": True, "message": "Review deleted"}

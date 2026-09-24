@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import secrets
 import sqlite3
-from typing import Optional
+from typing import Optional, Literal
 
 from dotenv import load_dotenv
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Response
@@ -59,6 +59,23 @@ class AdminLogin(BaseModel):
     password: str = Field(min_length=1, max_length=200)
 
 
+class AdminCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=200)
+    role: Literal["admin", "super_admin"] = "admin"
+
+
+class AdminUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=2, max_length=120)
+    role: Optional[Literal["admin", "super_admin"]] = None
+    is_active: Optional[bool] = None
+
+
+class AdminPasswordReset(BaseModel):
+    password: str = Field(min_length=8, max_length=200)
+
+
 class EnquiryStatusUpdate(BaseModel):
     status: str
 
@@ -77,6 +94,38 @@ class ReviewStatusUpdate(BaseModel):
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def hash_password(password: str) -> str:
+    """Hash passwords with a salted, deliberately expensive scrypt derivation."""
+    salt = secrets.token_bytes(16)
+    derived = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=16384, r=8, p=1)
+    return f"scrypt$16384$8$1${salt.hex()}${derived.hex()}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        algorithm, n_value, r_value, p_value, salt_hex, digest_hex = stored_hash.split("$", 5)
+        if algorithm != "scrypt":
+            return False
+        candidate = hashlib.scrypt(
+            password.encode("utf-8"),
+            salt=bytes.fromhex(salt_hex),
+            n=int(n_value),
+            r=int(r_value),
+            p=int(p_value),
+            dklen=len(bytes.fromhex(digest_hex)),
+        )
+        return hmac.compare_digest(candidate, bytes.fromhex(digest_hex))
+    except (TypeError, ValueError):
+        return False
+
+
+def normalise_email(email: str) -> str:
+    return email.strip().lower()
+
+
+DUMMY_PASSWORD_HASH = hash_password("jigisha-invalid-login-password")
 
 
 def init_db():
@@ -107,8 +156,45 @@ def init_db():
         )""")
         connection.execute("""CREATE TABLE IF NOT EXISTS admin_sessions (
             token_digest TEXT PRIMARY KEY,
-            expires_at TEXT NOT NULL
+            expires_at TEXT NOT NULL,
+            admin_id INTEGER
         )""")
+        session_columns = {row[1] for row in connection.execute("PRAGMA table_info(admin_sessions)").fetchall()}
+        if "admin_id" not in session_columns:
+            connection.execute("ALTER TABLE admin_sessions ADD COLUMN admin_id INTEGER")
+
+        connection.execute("""CREATE TABLE IF NOT EXISTS admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'admin' CHECK (role IN ('admin', 'super_admin')),
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        migrate_environment_admin(connection, "ADMIN_EMAIL", "ADMIN_PASSWORD", "super_admin", "School Super Admin")
+        migrate_environment_admin(connection, "SCHOOL_ADMIN_EMAIL", "SCHOOL_ADMIN_PASSWORD", "admin", "School Admin")
+
+
+def migrate_environment_admin(connection: sqlite3.Connection, email_key: str, password_key: str, role: str, default_name: str):
+    email = normalise_email(os.getenv(email_key, ""))
+    password = os.getenv(password_key, "")
+    if not email or not password:
+        return
+    existing = connection.execute("SELECT id, role FROM admins WHERE email = ?", (email,)).fetchone()
+    if existing:
+        if role == "super_admin":
+            connection.execute(
+                "UPDATE admins SET role = 'super_admin', is_active = 1, updated_at = ? WHERE id = ?",
+                (utc_now().isoformat(), existing[0]),
+            )
+        return
+    now = utc_now().isoformat()
+    connection.execute(
+        "INSERT INTO admins (name, email, password_hash, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
+        (default_name, email, hash_password(password), role, now, now),
+    )
 
 
 @app.on_event("startup")
@@ -123,18 +209,40 @@ def session_digest(token: str) -> str:
     return hmac.new(secret.encode("utf-8"), token.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def require_admin(admin_session: Optional[str] = Cookie(default=None, alias=SESSION_COOKIE)) -> str:
+def _authenticated_admin(admin_session: Optional[str]) -> dict:
     if not admin_session or not os.getenv("SECRET_KEY"):
         raise HTTPException(status_code=401, detail="Authentication required")
     digest = session_digest(admin_session)
     with sqlite3.connect(DB_PATH) as connection:
-        row = connection.execute("SELECT expires_at FROM admin_sessions WHERE token_digest = ?", (digest,)).fetchone()
-        if row and row[0] <= utc_now().isoformat():
+        connection.row_factory = sqlite3.Row
+        row = connection.execute(
+            """SELECT s.expires_at, a.id, a.name, a.email, a.role, a.is_active
+               FROM admin_sessions s JOIN admins a ON a.id = s.admin_id
+               WHERE s.token_digest = ?""",
+            (digest,),
+        ).fetchone()
+        if row and row["expires_at"] <= utc_now().isoformat():
             connection.execute("DELETE FROM admin_sessions WHERE token_digest = ?", (digest,))
             row = None
-    if not row:
+    if not row or not row["is_active"]:
         raise HTTPException(status_code=401, detail="Authentication required")
-    return digest
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "email": row["email"],
+        "role": row["role"],
+        "token_digest": digest,
+    }
+
+
+def require_admin(admin_session: Optional[str] = Cookie(default=None, alias=SESSION_COOKIE)) -> dict:
+    return _authenticated_admin(admin_session)
+
+
+def require_super_admin(admin: dict = Depends(require_admin)) -> dict:
+    if admin["role"] != "super_admin":
+        raise HTTPException(status_code=403, detail="Super Admin access required")
+    return admin
 
 
 def row_to_dict(row: sqlite3.Row) -> dict:
@@ -258,12 +366,6 @@ def admission_enquiry(payload: Enquiry):
 
 @app.post("/api/admin/login")
 def admin_login(payload: AdminLogin, response: Response):
-    super_admin_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
-    super_admin_password = os.getenv("ADMIN_PASSWORD", "")
-
-    school_admin_email = os.getenv("SCHOOL_ADMIN_EMAIL", "").strip().lower()
-    school_admin_password = os.getenv("SCHOOL_ADMIN_PASSWORD", "")
-
     if not os.getenv("SECRET_KEY"):
         logger.error("Admin login is unavailable because SECRET_KEY is missing.")
         raise HTTPException(
@@ -271,29 +373,16 @@ def admin_login(payload: AdminLogin, response: Response):
             detail="Admin authentication is not configured"
         )
 
-    entered_email = payload.email.strip().lower()
-
-    # Super Admin login
-    if (
-        super_admin_email
-        and super_admin_password
-        and hmac.compare_digest(entered_email, super_admin_email)
-        and hmac.compare_digest(payload.password, super_admin_password)
-    ):
-        role = "super_admin"
-        admin_email = super_admin_email
-
-    # School Admin login
-    elif (
-        school_admin_email
-        and school_admin_password
-        and hmac.compare_digest(entered_email, school_admin_email)
-        and hmac.compare_digest(payload.password, school_admin_password)
-    ):
-        role = "admin"
-        admin_email = school_admin_email
-
-    else:
+    entered_email = normalise_email(payload.email)
+    with sqlite3.connect(DB_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        account = connection.execute(
+            "SELECT id, name, email, password_hash, role, is_active FROM admins WHERE email = ?",
+            (entered_email,),
+        ).fetchone()
+    password_hash = account["password_hash"] if account else DUMMY_PASSWORD_HASH
+    password_valid = verify_password(payload.password, password_hash)
+    if not account or not account["is_active"] or not password_valid:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = secrets.token_urlsafe(32)
@@ -301,8 +390,8 @@ def admin_login(payload: AdminLogin, response: Response):
 
     with sqlite3.connect(DB_PATH) as connection:
         connection.execute(
-            "INSERT OR REPLACE INTO admin_sessions (token_digest, expires_at) VALUES (?, ?)",
-            (session_digest(token), expires_at),
+            "INSERT OR REPLACE INTO admin_sessions (token_digest, expires_at, admin_id) VALUES (?, ?, ?)",
+            (session_digest(token), expires_at, account["id"]),
         )
 
     secure_cookie = os.getenv("COOKIE_SECURE", "false").lower() == "true"
@@ -320,18 +409,148 @@ def admin_login(payload: AdminLogin, response: Response):
     return {
         "success": True,
         "admin": {
-            "email": admin_email,
-            "role": role,
+            "id": account["id"],
+            "name": account["name"],
+            "email": account["email"],
+            "role": account["role"],
         },
     }
 
 
 @app.post("/api/admin/logout")
-def admin_logout(response: Response, admin_session: str = Depends(require_admin)):
+def admin_logout(response: Response, admin: dict = Depends(require_admin)):
     with sqlite3.connect(DB_PATH) as connection:
-        connection.execute("DELETE FROM admin_sessions WHERE token_digest = ?", (admin_session,))
+        connection.execute("DELETE FROM admin_sessions WHERE token_digest = ?", (admin["token_digest"],))
     response.delete_cookie(SESSION_COOKIE, httponly=True, secure=os.getenv("COOKIE_SECURE", "false").lower() == "true", samesite="lax", path="/")
     return {"success": True}
+
+
+@app.get("/api/admin/me")
+def admin_me(admin: dict = Depends(require_admin)):
+    return {key: admin[key] for key in ("id", "name", "email", "role")}
+
+
+def public_admin(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "email": row["email"],
+        "role": row["role"],
+        "is_active": bool(row["is_active"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def is_protected_super_admin(email: str) -> bool:
+    bootstrap_email = normalise_email(os.getenv("ADMIN_EMAIL", ""))
+    return bool(bootstrap_email and email == bootstrap_email)
+
+
+def super_admin_count(connection: sqlite3.Connection) -> int:
+    return connection.execute("SELECT COUNT(*) FROM admins WHERE role = 'super_admin'").fetchone()[0]
+
+
+@app.get("/api/admin/admins")
+def list_admins(_: dict = Depends(require_super_admin)):
+    with sqlite3.connect(DB_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            "SELECT id, name, email, role, is_active, created_at, updated_at FROM admins ORDER BY datetime(created_at), id"
+        ).fetchall()
+    return {"items": [public_admin(row) for row in rows]}
+
+
+@app.post("/api/admin/admins", status_code=201)
+def create_admin(payload: AdminCreate, _: dict = Depends(require_super_admin)):
+    name = payload.name.strip()
+    email = normalise_email(payload.email)
+    if len(name) < 2:
+        raise HTTPException(status_code=422, detail="Name is too short")
+    now = utc_now().isoformat()
+    try:
+        with sqlite3.connect(DB_PATH) as connection:
+            cursor = connection.execute(
+                """INSERT INTO admins (name, email, password_hash, role, is_active, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, 1, ?, ?)""",
+                (name, email, hash_password(payload.password), payload.role, now, now),
+            )
+            connection.row_factory = sqlite3.Row
+            row = connection.execute(
+                "SELECT id, name, email, role, is_active, created_at, updated_at FROM admins WHERE id = ?",
+                (cursor.lastrowid,),
+            ).fetchone()
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="An admin with that email already exists")
+    return public_admin(row)
+
+
+@app.patch("/api/admin/admins/{admin_id}")
+def update_admin_account(admin_id: int, payload: AdminUpdate, current_admin: dict = Depends(require_super_admin)):
+    with sqlite3.connect(DB_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        target = connection.execute(
+            "SELECT id, name, email, role, is_active, created_at, updated_at FROM admins WHERE id = ?",
+            (admin_id,),
+        ).fetchone()
+        if not target:
+            raise HTTPException(status_code=404, detail="Admin not found")
+        changes = {}
+        if payload.name is not None:
+            name = payload.name.strip()
+            if len(name) < 2:
+                raise HTTPException(status_code=422, detail="Name is too short")
+            changes["name"] = name
+        next_role = payload.role or target["role"]
+        next_active = target["is_active"] if payload.is_active is None else int(payload.is_active)
+        if is_protected_super_admin(target["email"]):
+            if next_role != "super_admin" or not next_active:
+                raise HTTPException(status_code=409, detail="The primary Super Admin must remain active")
+        if target["role"] == "super_admin" and next_role != "super_admin" and super_admin_count(connection) <= 1:
+            raise HTTPException(status_code=409, detail="At least one Super Admin must remain")
+        if target["role"] == "super_admin" and not next_active and super_admin_count(connection) <= 1:
+            raise HTTPException(status_code=409, detail="At least one Super Admin must remain active")
+        if admin_id == current_admin["id"] and next_role != "super_admin" and super_admin_count(connection) <= 1:
+            raise HTTPException(status_code=409, detail="You cannot demote the last Super Admin")
+        changes.update({"role": next_role, "is_active": next_active, "updated_at": utc_now().isoformat()})
+        assignments = ", ".join(f"{column} = ?" for column in changes)
+        connection.execute(f"UPDATE admins SET {assignments} WHERE id = ?", [*changes.values(), admin_id])
+        updated = connection.execute(
+            "SELECT id, name, email, role, is_active, created_at, updated_at FROM admins WHERE id = ?",
+            (admin_id,),
+        ).fetchone()
+    return public_admin(updated)
+
+
+@app.delete("/api/admin/admins/{admin_id}")
+def delete_admin_account(admin_id: int, response: Response, current_admin: dict = Depends(require_super_admin)):
+    with sqlite3.connect(DB_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        target = connection.execute("SELECT id, email, role FROM admins WHERE id = ?", (admin_id,)).fetchone()
+        if not target:
+            raise HTTPException(status_code=404, detail="Admin not found")
+        if is_protected_super_admin(target["email"]):
+            raise HTTPException(status_code=409, detail="The primary Super Admin cannot be deleted")
+        if target["role"] == "super_admin" and super_admin_count(connection) <= 1:
+            raise HTTPException(status_code=409, detail="At least one Super Admin must remain")
+        connection.execute("DELETE FROM admin_sessions WHERE admin_id = ?", (admin_id,))
+        connection.execute("DELETE FROM admins WHERE id = ?", (admin_id,))
+    if admin_id == current_admin["id"]:
+        response.delete_cookie(SESSION_COOKIE, httponly=True, secure=os.getenv("COOKIE_SECURE", "false").lower() == "true", samesite="lax", path="/")
+    return {"success": True, "message": "Admin deleted"}
+
+
+@app.post("/api/admin/admins/{admin_id}/reset-password")
+def reset_admin_password(admin_id: int, payload: AdminPasswordReset, _: dict = Depends(require_super_admin)):
+    with sqlite3.connect(DB_PATH) as connection:
+        cursor = connection.execute(
+            "UPDATE admins SET password_hash = ?, updated_at = ? WHERE id = ?",
+            (hash_password(payload.password), utc_now().isoformat(), admin_id),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Admin not found")
+        connection.execute("DELETE FROM admin_sessions WHERE admin_id = ?", (admin_id,))
+    return {"success": True, "message": "Password reset successfully"}
 
 
 @app.get("/api/admin/stats")

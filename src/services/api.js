@@ -77,6 +77,10 @@ export function adminLogin(payload) {
   return request('/admin/login', { method: 'POST', body: JSON.stringify(payload) })
 }
 
+export function getAdminMe() {
+  return request('/admin/me')
+}
+
 export function adminLogout() {
   return request('/admin/logout', { method: 'POST' })
 }
@@ -116,4 +120,24 @@ export function updateAdminReview(id, payload) {
 
 export function deleteAdminReview(id) {
   return request(`/admin/reviews/${id}`, { method: 'DELETE' })
+}
+
+export function getAdmins() {
+  return request('/admin/admins')
+}
+
+export function createAdmin(payload) {
+  return request('/admin/admins', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export function updateAdmin(id, payload) {
+  return request(`/admin/admins/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+export function deleteAdmin(id) {
+  return request(`/admin/admins/${id}`, { method: 'DELETE' })
+}
+
+export function resetAdminPassword(id, password) {
+  return request(`/admin/admins/${id}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) })
 }

@@ -258,23 +258,72 @@ def admission_enquiry(payload: Enquiry):
 
 @app.post("/api/admin/login")
 def admin_login(payload: AdminLogin, response: Response):
-    configured_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
-    configured_password = os.getenv("ADMIN_PASSWORD", "")
-    if not configured_email or not configured_password or not os.getenv("SECRET_KEY"):
-        logger.error("Admin login is unavailable because required authentication settings are missing.")
-        raise HTTPException(status_code=503, detail="Admin authentication is not configured")
-    email_matches = hmac.compare_digest(payload.email.lower(), configured_email)
-    password_matches = hmac.compare_digest(payload.password, configured_password)
-    if not email_matches or not password_matches:
+    super_admin_email = os.getenv("ADMIN_EMAIL", "").strip().lower()
+    super_admin_password = os.getenv("ADMIN_PASSWORD", "")
+
+    school_admin_email = os.getenv("SCHOOL_ADMIN_EMAIL", "").strip().lower()
+    school_admin_password = os.getenv("SCHOOL_ADMIN_PASSWORD", "")
+
+    if not os.getenv("SECRET_KEY"):
+        logger.error("Admin login is unavailable because SECRET_KEY is missing.")
+        raise HTTPException(
+            status_code=503,
+            detail="Admin authentication is not configured"
+        )
+
+    entered_email = payload.email.strip().lower()
+
+    # Super Admin login
+    if (
+        super_admin_email
+        and super_admin_password
+        and hmac.compare_digest(entered_email, super_admin_email)
+        and hmac.compare_digest(payload.password, super_admin_password)
+    ):
+        role = "super_admin"
+        admin_email = super_admin_email
+
+    # School Admin login
+    elif (
+        school_admin_email
+        and school_admin_password
+        and hmac.compare_digest(entered_email, school_admin_email)
+        and hmac.compare_digest(payload.password, school_admin_password)
+    ):
+        role = "admin"
+        admin_email = school_admin_email
+
+    else:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = secrets.token_urlsafe(32)
     expires_at = (utc_now() + timedelta(hours=SESSION_HOURS)).isoformat()
+
     with sqlite3.connect(DB_PATH) as connection:
-        connection.execute("INSERT OR REPLACE INTO admin_sessions (token_digest, expires_at) VALUES (?, ?)", (session_digest(token), expires_at))
+        connection.execute(
+            "INSERT OR REPLACE INTO admin_sessions (token_digest, expires_at) VALUES (?, ?)",
+            (session_digest(token), expires_at),
+        )
+
     secure_cookie = os.getenv("COOKIE_SECURE", "false").lower() == "true"
-    response.set_cookie(SESSION_COOKIE, token, max_age=SESSION_HOURS * 3600, httponly=True, secure=secure_cookie, samesite="lax", path="/")
-    return {"success": True, "admin": {"email": configured_email}}
+
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=SESSION_HOURS * 3600,
+        httponly=True,
+        secure=secure_cookie,
+        samesite="lax",
+        path="/",
+    )
+
+    return {
+        "success": True,
+        "admin": {
+            "email": admin_email,
+            "role": role,
+        },
+    }
 
 
 @app.post("/api/admin/logout")

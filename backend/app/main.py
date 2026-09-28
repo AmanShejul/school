@@ -9,18 +9,28 @@ import sqlite3
 from typing import Optional, Literal
 
 from dotenv import load_dotenv
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Query, Response
+from fastapi import Cookie, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 
-from .content import FAQ, GALLERY, NEWS, SCHOOL
+from .content import FAQ, NEWS, SCHOOL
 from .email import notify_new_enquiry, notify_new_review
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 DB_PATH = BASE_DIR / "jigisha.db"
+gallery_upload_dir = Path(os.getenv("GALLERY_UPLOAD_DIR", "uploads/gallery")).expanduser()
+GALLERY_UPLOAD_DIR = gallery_upload_dir if gallery_upload_dir.is_absolute() else BASE_DIR / gallery_upload_dir
 SESSION_COOKIE = "jigisha_admin_session"
 SESSION_HOURS = 8
+GALLERY_MAX_IMAGE_SIZE = int(os.getenv("GALLERY_MAX_IMAGE_SIZE_MB", "10")) * 1024 * 1024
+GALLERY_CATEGORIES = (
+    "Campus", "Classrooms", "Laboratories", "Library", "Sports",
+    "Events", "Cultural Activities", "Achievements", "Student Life", "Other",
+)
+GALLERY_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+GALLERY_ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
 STATUS_VALUES = ("new", "contacted", "closed")
 REVIEW_ROLE_VALUES = ("Student", "Parent", "Alumni", "Teacher", "Other")
 REVIEW_STATUS_VALUES = ("pending", "approved", "rejected")
@@ -37,6 +47,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["*"],
 )
+GALLERY_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads/gallery", StaticFiles(directory=GALLERY_UPLOAD_DIR), name="gallery-uploads")
 
 
 class Enquiry(BaseModel):
@@ -90,6 +102,13 @@ class ReviewSubmission(BaseModel):
 
 class ReviewStatusUpdate(BaseModel):
     status: str
+
+
+class GalleryUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=160)
+    description: Optional[str] = Field(default=None, max_length=1000)
+    category: Optional[str] = Field(default=None, max_length=60)
+    is_published: Optional[bool] = None
 
 
 def utc_now() -> datetime:
@@ -173,6 +192,20 @@ def init_db():
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )""")
+        connection.execute("""CREATE TABLE IF NOT EXISTS gallery_images (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            image_url TEXT NOT NULL,
+            storage_path TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            description TEXT NOT NULL DEFAULT '',
+            category TEXT NOT NULL,
+            is_published INTEGER NOT NULL DEFAULT 1,
+            created_by INTEGER,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (created_by) REFERENCES admins(id)
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_gallery_images_published ON gallery_images (is_published, category, created_at)")
         migrate_environment_admin(connection, "ADMIN_EMAIL", "ADMIN_PASSWORD", "super_admin", "School Super Admin")
         migrate_environment_admin(connection, "SCHOOL_ADMIN_EMAIL", "SCHOOL_ADMIN_PASSWORD", "admin", "School Admin")
 
@@ -249,6 +282,33 @@ def row_to_dict(row: sqlite3.Row) -> dict:
     return {key: row[key] for key in row.keys()}
 
 
+def gallery_public_item(row: sqlite3.Row, request: Request) -> dict:
+    item = row_to_dict(row)
+    item["is_published"] = bool(item["is_published"])
+    item["image_url"] = f"{str(request.base_url).rstrip('/')}/uploads/gallery/{item['storage_path']}"
+    item.pop("storage_path", None)
+    item.pop("created_by", None)
+    return item
+
+
+def gallery_file_path(storage_path: str) -> Optional[Path]:
+    candidate = (GALLERY_UPLOAD_DIR / Path(storage_path).name).resolve()
+    upload_root = GALLERY_UPLOAD_DIR.resolve()
+    if candidate.parent != upload_root:
+        return None
+    return candidate
+
+
+def valid_image_signature(extension: str, contents: bytes) -> bool:
+    if extension in {".jpg", ".jpeg"}:
+        return contents.startswith(b"\xff\xd8\xff")
+    if extension == ".png":
+        return contents.startswith(b"\x89PNG\r\n\x1a\n")
+    if extension == ".webp":
+        return len(contents) >= 12 and contents[:4] == b"RIFF" and contents[8:12] == b"WEBP"
+    return False
+
+
 def get_enquiry(enquiry_id: int) -> dict:
     with sqlite3.connect(DB_PATH) as connection:
         connection.row_factory = sqlite3.Row
@@ -283,8 +343,152 @@ def news():
 
 
 @app.get("/api/gallery")
-def gallery():
-    return {"success": True, "items": GALLERY}
+def gallery(request: Request, category: Optional[str] = Query(default=None, max_length=60)):
+    if category and category not in GALLERY_CATEGORIES:
+        raise HTTPException(status_code=422, detail="Invalid gallery category")
+    where = " WHERE is_published = 1"
+    params: list[str] = []
+    if category:
+        where += " AND category = ?"
+        params.append(category)
+    with sqlite3.connect(DB_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            f"SELECT id, image_url, storage_path, title, description, category, is_published, created_by, created_at, updated_at FROM gallery_images{where} ORDER BY datetime(created_at) DESC, id DESC",
+            params,
+        ).fetchall()
+    return {"success": True, "items": [gallery_public_item(row, request) for row in rows], "categories": list(GALLERY_CATEGORIES)}
+
+
+@app.get("/api/admin/gallery")
+def admin_gallery(request: Request, category: Optional[str] = Query(default=None, max_length=60), _: dict = Depends(require_admin)):
+    if category and category not in GALLERY_CATEGORIES:
+        raise HTTPException(status_code=422, detail="Invalid gallery category")
+    where = ""
+    params: list[str] = []
+    if category:
+        where = " WHERE category = ?"
+        params.append(category)
+    with sqlite3.connect(DB_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            f"SELECT id, image_url, storage_path, title, description, category, is_published, created_by, created_at, updated_at FROM gallery_images{where} ORDER BY datetime(created_at) DESC, id DESC",
+            params,
+        ).fetchall()
+    return {"success": True, "items": [gallery_public_item(row, request) for row in rows], "categories": list(GALLERY_CATEGORIES)}
+
+
+@app.post("/api/gallery", status_code=201)
+async def create_gallery_images(
+    request: Request,
+    files: list[UploadFile] = File(default=[]),
+    category: str = Form(default="Other"),
+    title: str = Form(default=""),
+    description: str = Form(default=""),
+    is_published: bool = Form(default=True),
+    admin: dict = Depends(require_admin),
+):
+    if not files:
+        raise HTTPException(status_code=400, detail="Select at least one image")
+    if category not in GALLERY_CATEGORIES:
+        raise HTTPException(status_code=422, detail="Invalid gallery category")
+    clean_title = title.strip()[:160]
+    clean_description = description.strip()[:1000]
+    created_items = []
+    errors = []
+    for index, upload in enumerate(files):
+        original_name = upload.filename or f"photo-{index + 1}"
+        extension = Path(original_name).suffix.lower()
+        try:
+            if extension not in GALLERY_ALLOWED_EXTENSIONS:
+                raise ValueError("Unsupported image type. Use JPG, PNG, or WEBP.")
+            if (upload.content_type or "").lower() not in GALLERY_ALLOWED_MIME_TYPES:
+                raise ValueError("The uploaded MIME type is not supported.")
+            contents = await upload.read()
+            if not contents:
+                raise ValueError("The file is empty.")
+            if len(contents) > GALLERY_MAX_IMAGE_SIZE:
+                raise ValueError(f"Image exceeds the {GALLERY_MAX_IMAGE_SIZE // (1024 * 1024)} MB limit.")
+            if not valid_image_signature(extension, contents):
+                raise ValueError("The file contents do not match the selected image type.")
+            storage_name = f"{secrets.token_hex(20)}{extension}"
+            file_path = GALLERY_UPLOAD_DIR / storage_name
+            file_path.write_bytes(contents)
+            now = utc_now().isoformat()
+            item_title = clean_title or Path(original_name).stem.replace("_", " ").replace("-", " ").strip()[:160]
+            try:
+                with sqlite3.connect(DB_PATH) as connection:
+                    cursor = connection.execute(
+                        """INSERT INTO gallery_images
+                           (image_url, storage_path, title, description, category, is_published, created_by, created_at, updated_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (f"/uploads/gallery/{storage_name}", storage_name, item_title, clean_description, category, int(is_published), admin["id"], now, now),
+                    )
+                    image_id = cursor.lastrowid
+                    connection.row_factory = sqlite3.Row
+                    row = connection.execute(
+                        "SELECT id, image_url, storage_path, title, description, category, is_published, created_by, created_at, updated_at FROM gallery_images WHERE id = ?",
+                        (image_id,),
+                    ).fetchone()
+                created_items.append(gallery_public_item(row, request))
+            except Exception:
+                file_path.unlink(missing_ok=True)
+                raise
+        except (OSError, ValueError) as error:
+            errors.append({"filename": original_name, "error": str(error)})
+        finally:
+            await upload.close()
+    if not created_items and errors:
+        raise HTTPException(status_code=422, detail={"message": "No images were uploaded", "errors": errors})
+    return {"success": True, "items": created_items, "errors": errors}
+
+
+@app.patch("/api/gallery/{image_id}")
+def update_gallery_image(image_id: int, payload: GalleryUpdate, request: Request, _: dict = Depends(require_admin)):
+    values = payload.model_dump(exclude_unset=True)
+    changes = {}
+    if "title" in values:
+        changes["title"] = (values["title"] or "").strip()[:160]
+    if "description" in values:
+        changes["description"] = (values["description"] or "").strip()[:1000]
+    if "category" in values:
+        if values["category"] not in GALLERY_CATEGORIES:
+            raise HTTPException(status_code=422, detail="Invalid gallery category")
+        changes["category"] = values["category"]
+    if "is_published" in values:
+        changes["is_published"] = int(bool(values["is_published"]))
+    if not changes:
+        raise HTTPException(status_code=400, detail="No gallery changes supplied")
+    changes["updated_at"] = utc_now().isoformat()
+    with sqlite3.connect(DB_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        target = connection.execute("SELECT id FROM gallery_images WHERE id = ?", (image_id,)).fetchone()
+        if not target:
+            raise HTTPException(status_code=404, detail="Gallery image not found")
+        assignments = ", ".join(f"{column} = ?" for column in changes)
+        connection.execute(f"UPDATE gallery_images SET {assignments} WHERE id = ?", [*changes.values(), image_id])
+        row = connection.execute(
+            "SELECT id, image_url, storage_path, title, description, category, is_published, created_by, created_at, updated_at FROM gallery_images WHERE id = ?",
+            (image_id,),
+        ).fetchone()
+    return gallery_public_item(row, request)
+
+
+@app.delete("/api/gallery/{image_id}")
+def delete_gallery_image(image_id: int, _: dict = Depends(require_admin)):
+    with sqlite3.connect(DB_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute("SELECT storage_path FROM gallery_images WHERE id = ?", (image_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Gallery image not found")
+        connection.execute("DELETE FROM gallery_images WHERE id = ?", (image_id,))
+    file_path = gallery_file_path(row["storage_path"])
+    if file_path:
+        try:
+            file_path.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Unable to remove gallery file after deleting image %s", image_id)
+    return {"success": True, "message": "Gallery image deleted"}
 
 
 @app.get("/api/faq")

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useInView, useReducedMotion } from 'framer-motion'
 import { galleryVisuals, imageAssets, learningSpaces, newsItems, reviews, schoolLocation, schoolStats } from './data/siteData'
-import { adminLogin, adminLogout, createAdmin, deleteAdmin, deleteAdminEnquiry, deleteAdminReview, getAdminEnquiries, getAdminEnquiry, getAdminMe, getAdminReviews, getAdminStats, getAdmins, getNews, getReviews, resetAdminPassword, submitAdmissionEnquiry, submitContact, submitEnquiry, submitReview, updateAdmin, updateAdminEnquiry, updateAdminReview } from './services/api'
+import { adminLogin, adminLogout, createAdmin, deleteAdmin, deleteAdminEnquiry, deleteAdminReview, deleteGalleryImage, getAdminEnquiries, getAdminEnquiry, getAdminGallery, getAdminMe, getAdminReviews, getAdminStats, getAdmins, getGallery, getNews, getReviews, resetAdminPassword, submitAdmissionEnquiry, submitContact, submitEnquiry, submitReview, updateAdmin, updateAdminEnquiry, updateAdminReview, updateGalleryImage, uploadGallery } from './services/api'
 
 const logo = imageAssets.logo
 const heroImage = imageAssets.heroImage
@@ -163,7 +163,7 @@ function AdminDashboard({ navigate }) {
 
   if (loading) return <main className="admin-page admin-login-page"><div className="admin-muted">Restoring your session…</div></main>
   if (!currentAdmin) return null
-  return <><EnquiryDashboard navigate={navigate} currentAdmin={currentAdmin} /><main className="admin-page admin-review-page"><div className="admin-shell"><AdminReviewsPanel navigate={navigate} />{currentAdmin.role === 'super_admin' ? <AdminManagementPanel navigate={navigate} currentAdmin={currentAdmin} /> : null}</div></main></>
+  return <><EnquiryDashboard navigate={navigate} currentAdmin={currentAdmin} /><main className="admin-page admin-review-page"><div className="admin-shell"><GalleryManagementPanel navigate={navigate} /><AdminReviewsPanel navigate={navigate} />{currentAdmin.role === 'super_admin' ? <AdminManagementPanel navigate={navigate} currentAdmin={currentAdmin} /> : null}</div></main></>
 }
 
 function EnquiryDashboard({ navigate, currentAdmin }) {
@@ -208,6 +208,107 @@ function EnquiryDashboard({ navigate, currentAdmin }) {
   const logout = async () => { try { await adminLogout() } finally { navigate('/admin/login') } }
 
   return <main className="admin-page"><div className="admin-shell"><header className="admin-header"><div className="admin-header-brand"><span className="admin-brand-mark"><img src={logo} alt="" /></span><div><strong>Jigisha International School</strong><span>{currentAdmin.name} · {currentAdmin.role === 'super_admin' ? 'Super Admin' : 'Admin'}</span></div></div><div className="admin-header-actions"><a href="/" onClick={event => { event.preventDefault(); navigate('/') }}>View website</a><button type="button" onClick={logout}>Log out</button></div></header><section className="admin-welcome"><div><p className="admin-eyebrow">School administration</p><h1>Enquiries</h1><p className="admin-muted">Review, follow up and keep every family conversation moving.</p><nav className="admin-tabs" aria-label="Administration sections"><a href="#enquiries">Enquiries</a><a href="#reviews">Reviews</a>{currentAdmin.role === 'super_admin' ? <a href="#admin-management">Admin Management</a> : null}</nav></div><button type="button" className="admin-refresh" onClick={load}>Refresh <Icon name="arrow-up-right" size={14} /></button></section>{stats ? <div className="admin-stats-grid"><AdminStat label="Total enquiries" value={stats.total_enquiries} tone="blue" /><AdminStat label="New enquiries" value={stats.new_enquiries} tone="orange" /><AdminStat label="Contacted" value={stats.contacted_enquiries} tone="green" /><AdminStat label="Closed" value={stats.closed_enquiries} tone="navy" /></div> : null}<section id="enquiries" className="admin-panel"><div className="admin-panel-head"><div><h2>Enquiry records</h2><span>{total} {total === 1 ? 'record' : 'records'}</span></div><div className="admin-filters"><label className="admin-search"><span className="sr-only">Search enquiries</span><input name="search" value={filters.search} onChange={updateFilter} placeholder="Search parent, student, email or mobile" /></label><label><span className="sr-only">Filter by grade</span><input name="grade" value={filters.grade} onChange={updateFilter} placeholder="Grade" /></label><label><span className="sr-only">Filter by status</span><select name="status" value={filters.status} onChange={updateFilter}><option value="">All statuses</option><option value="new">New</option><option value="contacted">Contacted</option><option value="closed">Closed</option></select></label></div></div>{error ? <p className="admin-alert" role="alert">{error}</p> : null}{loading ? <div className="admin-empty">Loading enquiries…</div> : items.length === 0 ? <div className="admin-empty"><strong>No enquiries yet.</strong><span>New parent enquiries will appear here.</span></div> : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Parent</th><th>Student</th><th>Grade</th><th>Email</th><th>Mobile</th><th>Status</th><th>Submitted</th><th>Actions</th></tr></thead><tbody>{items.map(item => <tr key={item.id}><td data-label="Parent"><strong>{item.parent}</strong></td><td data-label="Student">{item.student}</td><td data-label="Grade">{item.grade}</td><td data-label="Email">{item.email}</td><td data-label="Mobile">{item.mobile}</td><td data-label="Status"><select className={`admin-status-select status-${item.status}`} value={item.status} onChange={event => changeStatus(item.id, event.target.value)} aria-label={`Change status for ${item.parent}`}><option value="new">New</option><option value="contacted">Contacted</option><option value="closed">Closed</option></select></td><td data-label="Submitted">{formatAdminDate(item.created_at)}</td><td data-label="Actions"><div className="admin-row-actions"><button type="button" onClick={() => openDetail(item.id)}>View</button><button type="button" className="admin-delete" onClick={() => remove(item.id)}>Delete</button></div></td></tr>)}</tbody></table></div>}</section></div>{toast ? <div className="admin-toast" role="status">{toast}</div> : null}{selected ? <div className="admin-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSelected(null) }}><section className="admin-detail" role="dialog" aria-modal="true" aria-labelledby="admin-detail-title"><button type="button" className="admin-modal-close" onClick={() => setSelected(null)} aria-label="Close enquiry details"><Icon name="close" size={21} /></button><p className="admin-eyebrow">Enquiry #{selected.id}</p><h2 id="admin-detail-title">{selected.parent}</h2><div className="admin-detail-status"><span>Current status</span><select className={`admin-status-select status-${selected.status}`} value={selected.status} onChange={event => changeStatus(selected.id, event.target.value)}><option value="new">New</option><option value="contacted">Contacted</option><option value="closed">Closed</option></select></div><dl><div><dt>Student</dt><dd>{selected.student}</dd></div><div><dt>Email</dt><dd>{selected.email}</dd></div><div><dt>Mobile</dt><dd>{selected.mobile}</dd></div><div><dt>Grade</dt><dd>{selected.grade}</dd></div><div><dt>Submitted</dt><dd>{formatAdminDate(selected.created_at)}</dd></div><div className="admin-detail-message"><dt>Message</dt><dd>{selected.message || 'No message provided.'}</dd></div></dl><button type="button" className="admin-danger-button" onClick={() => remove(selected.id)}>Delete enquiry</button></section></div> : null}</main>
+}
+
+const galleryCategories = ['Campus', 'Classrooms', 'Laboratories', 'Library', 'Sports', 'Events', 'Cultural Activities', 'Achievements', 'Student Life', 'Other']
+
+function GalleryManagementPanel({ navigate }) {
+  const [items, setItems] = useState([])
+  const [categoryFilter, setCategoryFilter] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [toast, setToast] = useState('')
+  const [uploadOpen, setUploadOpen] = useState(false)
+  const [editItem, setEditItem] = useState(null)
+  const [selectedFiles, setSelectedFiles] = useState([])
+  const [uploadForm, setUploadForm] = useState({ category: 'Campus', title: '', description: '', isPublished: true })
+  const [editForm, setEditForm] = useState({ title: '', description: '', category: 'Campus', isPublished: true })
+  const [saving, setSaving] = useState(false)
+
+  const load = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const payload = await getAdminGallery({ category: categoryFilter })
+      setItems(payload.items || [])
+    } catch (requestError) {
+      if (requestError.status === 401) navigate('/admin/login')
+      else setError(requestError.message || 'Unable to load gallery images.')
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [categoryFilter])
+  useEffect(() => { if (!toast) return undefined; const timer = window.setTimeout(() => setToast(''), 3000); return () => window.clearTimeout(timer) }, [toast])
+  useEffect(() => () => selectedFiles.forEach(file => URL.revokeObjectURL(file.preview)), [selectedFiles])
+
+  const openUpload = () => {
+    setUploadForm({ category: 'Campus', title: '', description: '', isPublished: true })
+    setSelectedFiles([])
+    setError('')
+    setUploadOpen(true)
+  }
+  const closeUpload = () => { selectedFiles.forEach(file => URL.revokeObjectURL(file.preview)); setSelectedFiles([]); setUploadOpen(false) }
+  const chooseFiles = event => {
+    const files = Array.from(event.target.files || [])
+    const invalid = files.filter(file => !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024)
+    const valid = files.filter(file => !invalid.includes(file))
+    if (invalid.length) setError(`${invalid.map(file => file.name).join(', ')} ${invalid.length === 1 ? 'was' : 'were'} rejected. Use JPG, PNG or WEBP images up to 10 MB.`)
+    selectedFiles.forEach(file => URL.revokeObjectURL(file.preview))
+    setSelectedFiles(valid.map(file => ({ file, preview: URL.createObjectURL(file) })))
+    event.target.value = ''
+  }
+  const updateUploadForm = event => {
+    const { name, value, type, checked } = event.target
+    setUploadForm(current => ({ ...current, [name]: type === 'checkbox' ? checked : value }))
+  }
+  const submitUpload = async event => {
+    event.preventDefault()
+    if (!selectedFiles.length) { setError('Select at least one photo before uploading.'); return }
+    setSaving(true)
+    setError('')
+    try {
+      const payload = await uploadGallery(selectedFiles.map(item => item.file), uploadForm)
+      const uploadErrors = payload.errors?.length ? payload.errors.map(item => `${item.filename}: ${item.error}`).join(' ') : ''
+      if (payload.items?.length) {
+        setToast(`${payload.items.length} photo${payload.items.length === 1 ? '' : 's'} uploaded.`)
+        closeUpload()
+        await load()
+        if (uploadErrors) setError(uploadErrors)
+      } else if (uploadErrors) {
+        setError(uploadErrors)
+      }
+    } catch (requestError) {
+      if (requestError.status === 401) navigate('/admin/login')
+      else setError(requestError.message || 'Unable to upload these photos.')
+    } finally { setSaving(false) }
+  }
+  const openEdit = item => { setEditItem(item); setEditForm({ title: item.title || '', description: item.description || '', category: item.category, isPublished: Boolean(item.is_published) }); setError('') }
+  const updateEditForm = event => {
+    const { name, value, type, checked } = event.target
+    setEditForm(current => ({ ...current, [name]: type === 'checkbox' ? checked : value }))
+  }
+  const saveEdit = async event => {
+    event.preventDefault()
+    setSaving(true)
+    try {
+      await updateGalleryImage(editItem.id, { title: editForm.title, description: editForm.description, category: editForm.category, is_published: editForm.isPublished })
+      setToast('Gallery details updated.')
+      setEditItem(null)
+      await load()
+    } catch (requestError) {
+      if (requestError.status === 401) navigate('/admin/login')
+      else setError(requestError.message || 'Unable to update this photo.')
+    } finally { setSaving(false) }
+  }
+  const togglePublished = async item => {
+    try { await updateGalleryImage(item.id, { is_published: !item.is_published }); setToast(item.is_published ? 'Photo unpublished.' : 'Photo published.'); await load() } catch (requestError) { if (requestError.status === 401) navigate('/admin/login'); else setError(requestError.message || 'Unable to change publication status.') }
+  }
+  const remove = async item => {
+    if (!window.confirm('Are you sure you want to delete this photo?')) return
+    try { await deleteGalleryImage(item.id); setToast('Photo deleted.'); await load() } catch (requestError) { if (requestError.status === 401) navigate('/admin/login'); else setError(requestError.message || 'Unable to delete this photo.') }
+  }
+
+  return <section id="gallery-management" className="admin-panel admin-gallery-panel"><div className="admin-panel-head"><div><p className="admin-eyebrow">Website content</p><h2>Gallery Management</h2><span>{items.length} {items.length === 1 ? 'photo' : 'photos'} · JPG, PNG and WEBP up to 10 MB</span></div><div className="admin-gallery-toolbar"><label><span className="sr-only">Filter gallery by category</span><select value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option value="">All categories</option>{galleryCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></label><button type="button" className="admin-refresh" onClick={openUpload}>+ Add photos</button><button type="button" className="admin-refresh admin-refresh-light" onClick={load}>Refresh</button></div></div>{error ? <p className="admin-alert" role="alert">{error}</p> : null}{loading ? <div className="admin-empty">Loading gallery…</div> : items.length === 0 ? <div className="admin-empty"><strong>No gallery photos yet.</strong><span>Upload the first school photo to publish it on the website.</span></div> : <div className="admin-gallery-grid">{items.map(item => <article className="admin-gallery-card" key={item.id}><div className="admin-gallery-media"><img src={item.image_url} alt={item.title || item.category} loading="lazy" onError={event => { event.currentTarget.style.display = 'none' }} /><span className="admin-gallery-fallback">Image unavailable</span><span className={`admin-gallery-badge ${item.is_published ? 'is-published' : 'is-unpublished'}`}>{item.is_published ? 'Published' : 'Unpublished'}</span></div><div className="admin-gallery-copy"><div className="admin-gallery-meta"><span>{item.category}</span><time>{formatAdminDate(item.created_at)}</time></div><h3>{item.title || 'Untitled photo'}</h3>{item.description ? <p>{item.description}</p> : null}<div className="admin-row-actions admin-gallery-actions"><button type="button" onClick={() => openEdit(item)}>Edit</button><button type="button" onClick={() => togglePublished(item)}>{item.is_published ? 'Unpublish' : 'Publish'}</button><button type="button" className="admin-delete" onClick={() => remove(item)}>Delete</button></div></div></article>)}</div>}{uploadOpen ? <div className="admin-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeUpload() }}><section className="admin-detail admin-gallery-editor" role="dialog" aria-modal="true" aria-labelledby="gallery-upload-title"><button type="button" className="admin-modal-close" onClick={closeUpload} aria-label="Close upload form"><Icon name="close" size={21} /></button><p className="admin-eyebrow">New gallery photos</p><h2 id="gallery-upload-title">Add photos.</h2><form className="admin-gallery-form" onSubmit={submitUpload}><label>Select photos<input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple onChange={chooseFiles} /></label>{selectedFiles.length ? <div className="admin-upload-previews">{selectedFiles.map(item => <div key={`${item.file.name}-${item.file.lastModified}`}><img src={item.preview} alt={item.file.name} /><span>{item.file.name}</span></div>)}</div> : <p className="admin-upload-hint">You can select multiple photos at once. Preview them here before uploading.</p>}<div className="admin-gallery-form-grid"><label>Category<select name="category" value={uploadForm.category} onChange={updateUploadForm}>{galleryCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></label><label>Title for all selected photos<input name="title" value={uploadForm.title} onChange={updateUploadForm} maxLength="160" placeholder="Optional shared title" /></label></div><label>Description for all selected photos<textarea name="description" value={uploadForm.description} onChange={updateUploadForm} rows="3" maxLength="1000" placeholder="Optional context for visitors" /></label><label className="admin-checkbox"><input type="checkbox" name="isPublished" checked={uploadForm.isPublished} onChange={updateUploadForm} /> Publish immediately</label><div className="admin-form-actions"><button type="button" className="admin-secondary-button" onClick={closeUpload}>Cancel</button><button type="submit" className="admin-primary-button" disabled={saving}>{saving ? 'Uploading…' : 'Upload photos'}</button></div></form></section></div> : null}{editItem ? <div className="admin-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setEditItem(null) }}><section className="admin-detail admin-gallery-editor" role="dialog" aria-modal="true" aria-labelledby="gallery-edit-title"><button type="button" className="admin-modal-close" onClick={() => setEditItem(null)} aria-label="Close edit form"><Icon name="close" size={21} /></button><p className="admin-eyebrow">Edit gallery photo</p><h2 id="gallery-edit-title">Update details.</h2><div className="admin-edit-preview"><img src={editItem.image_url} alt={editItem.title || editItem.category} /></div><form className="admin-gallery-form" onSubmit={saveEdit}><label>Title<input name="title" value={editForm.title} onChange={updateEditForm} maxLength="160" /></label><label>Description<textarea name="description" value={editForm.description} onChange={updateEditForm} rows="4" maxLength="1000" /></label><label>Category<select name="category" value={editForm.category} onChange={updateEditForm}>{galleryCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></label><label className="admin-checkbox"><input type="checkbox" name="isPublished" checked={editForm.isPublished} onChange={updateEditForm} /> Published on public gallery</label><div className="admin-form-actions"><button type="button" className="admin-secondary-button" onClick={() => setEditItem(null)}>Cancel</button><button type="submit" className="admin-primary-button" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button></div></form></section></div> : null}{toast ? <div className="admin-toast" role="status">{toast}</div> : null}</section>
 }
 
 function AdminReviewsPanel({ navigate }) {
@@ -363,6 +464,29 @@ function AchievementsSection() {
 }
 
 function GallerySection() {
+  const [items, setItems] = useState([])
+  const [categories, setCategories] = useState(galleryCategories)
+  const [category, setCategory] = useState('')
+  const [active, setActive] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    setError(false)
+    getGallery({ category }).then(payload => { setItems(payload.items || []); if (payload.categories?.length) setCategories(payload.categories) }).catch(() => setError(true)).finally(() => setLoading(false))
+  }, [category])
+  useEffect(() => {
+    if (active === null) return undefined
+    const onKeyDown = event => { if (event.key === 'Escape') setActive(null); if (event.key === 'ArrowRight') setActive(index => (index + 1) % items.length); if (event.key === 'ArrowLeft') setActive(index => (index - 1 + items.length) % items.length) }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [active, items.length])
+  const current = active === null ? null : items[active]
+  return <section className="section gallery-section section-paper"><div className="shell"><div className="section-head split-head"><div><p className="eyebrow"><span></span> Gallery</p><h2>See the <i>possibility.</i></h2></div><p>Real moments from the Jigisha community, shared by the school team.</p></div><div className="public-gallery-toolbar"><div className="gallery-category-filter" role="group" aria-label="Filter gallery categories"><button type="button" className={!category ? 'active' : ''} onClick={() => { setCategory(''); setActive(null) }}>All photos</button>{categories.map(item => <button type="button" className={category === item ? 'active' : ''} key={item} onClick={() => { setCategory(item); setActive(null) }}>{item}</button>)}</div></div>{loading ? <div className="public-gallery-state">Loading gallery…</div> : error ? <div className="public-gallery-state"><strong>Gallery unavailable right now.</strong><span>Please try again shortly.</span></div> : items.length === 0 ? <div className="public-gallery-state"><strong>No published photos yet.</strong><span>Gallery moments will appear here as the school shares them.</span></div> : <div className="gallery-grid">{items.map((item, index) => <Reveal className={`gallery-tile gallery-photo gallery-${(index % 6) + 1}`} delay={index * .05} key={item.id}><button className="gallery-trigger" onClick={() => setActive(index)} aria-label={`Open ${item.title || item.category} gallery image`}><img className="gallery-image" src={item.image_url} alt={item.title || item.category} loading="lazy" onError={event => { event.currentTarget.style.display = 'none' }} /><div className="gallery-caption"><small>{item.category}</small><strong>{item.title || 'Jigisha gallery photo'}</strong><Icon name="arrow-up-right" size={17} /></div></button></Reveal>)}</div>}</div>{current ? <AnimatePresence><motion.div className="lightbox" role="dialog" aria-modal="true" aria-label={`${current.category} gallery image`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}><button className="lightbox-close" onClick={() => setActive(null)} aria-label="Close gallery"><Icon name="close" size={25} /></button><button className="lightbox-nav lightbox-prev" onClick={() => setActive(index => (index - 1 + items.length) % items.length)} aria-label="Previous image"><Icon name="chevron-left" size={32} /></button><div className="lightbox-art gallery-photo"><img className="lightbox-image" src={current.image_url} alt={current.title || current.category} /><div className="lightbox-copy"><small>{current.category} / {String(active + 1).padStart(2, '0')}</small><h3>{current.title || 'Jigisha gallery photo'}</h3><p>{current.description || 'An official Jigisha International School photograph.'}</p></div></div><button className="lightbox-nav lightbox-next" onClick={() => setActive(index => (index + 1) % items.length)} aria-label="Next image"><Icon name="chevron-right" size={32} /></button></motion.div></AnimatePresence> : null}</section>
+}
+
+function LegacyGallerySection() {
   const [active, setActive] = useState(null)
   const galleryItems = [...imageAssets.galleryImages.map((src, index) => ({ src, category: 'Campus', title: index === 0 ? 'Jigisha school building' : `Jigisha image ${index + 1}`, tone: 'gallery-photo' })), ...galleryVisuals]
   useEffect(() => {
@@ -531,6 +655,10 @@ function FaqItem({ question, answer, openByDefault }) {
 }
 
 function InnerPage({ path }) {
+  return path === '/gallery' ? <><ContentInnerPage path={path} /><GallerySection /></> : <ContentInnerPage path={path} />
+}
+
+function ContentInnerPage({ path }) {
   const config = pageConfig(path)
   return <main className="inner-page"><section className="inner-hero section-dark"><div className="shell inner-hero-grid"><div><p className="eyebrow eyebrow-light"><span></span> Jigisha International School</p><h1>{config.title}<br /><i>{config.italic}</i></h1><p>{config.intro}</p></div><div className="inner-emblem"><img src={logo} alt="Jigisha International School official crest" loading="lazy" /><span>Establishing a place<br />to learn & belong</span></div></div></section><section className="section page-content"><div className="shell page-content-grid"><aside><p className="eyebrow"><span></span> Explore</p><nav>{['/about', '/academics', '/why-jigisha', '/admissions', '/student-life', '/gallery', '/achievements', '/news', '/contact'].map(href => <a className={path === href ? 'active' : ''} href={href} key={href}>{pageTitle(href)} <Icon name="arrow-up-right" size={14} /></a>)}</nav></aside><div className="page-main"><div className="page-visual"><div className="page-visual-rings"></div><img src={logo} alt="Official Jigisha International School crest" loading="lazy" /><span>{pageTitle(path)} / Jigisha</span></div>{config.blocks.map((block, index) => <div className="content-block reveal" id={block.id} key={index}>{block.type === 'heading' ? <h2>{block.text}</h2> : block.type === 'list' ? <div className="content-list">{block.items.map(item => <div key={item[0]}><span>{item[0]}</span><div><h3>{item[1]}</h3><p>{item[2]}</p></div></div>)}</div> : <p>{block.text}</p>}</div>)}{path === '/admissions' ? <div className="page-form-section"><EnquiryForm endpoint="admission" /></div> : null}{path === '/contact' ? <div className="page-form-section"><ContactForm /></div> : null}</div></div></section></main>
 }

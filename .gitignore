@@ -4,5 +4,6 @@ backend/jigisha.db
 __pycache__/
 *.py[cod]
 node_modules/.vite/
+backend/uploads/
 dist/assets/index-*.js
 dist/assets/index-*.css

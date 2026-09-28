@@ -11,10 +11,11 @@ function resolveApiUrl(value) {
 const API_URL = resolveApiUrl(configuredApiUrl)
 
 async function request(path, options = {}) {
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers: { ...(isFormData ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) },
   })
 
   if (!response.ok) {
@@ -49,8 +50,9 @@ export function getNews() {
   return request('/news')
 }
 
-export function getGallery() {
-  return request('/gallery')
+export function getGallery({ category = '' } = {}) {
+  const query = category ? `?category=${encodeURIComponent(category)}` : ''
+  return request(`/gallery${query}`)
 }
 
 export function getFAQ() {
@@ -140,4 +142,27 @@ export function deleteAdmin(id) {
 
 export function resetAdminPassword(id, password) {
   return request(`/admin/admins/${id}/reset-password`, { method: 'POST', body: JSON.stringify({ password }) })
+}
+
+export function getAdminGallery({ category = '' } = {}) {
+  const query = category ? `?category=${encodeURIComponent(category)}` : ''
+  return request(`/admin/gallery${query}`)
+}
+
+export function uploadGallery(files, { category, title, description, isPublished }) {
+  const body = new FormData()
+  files.forEach(file => body.append('files', file))
+  body.append('category', category)
+  body.append('title', title || '')
+  body.append('description', description || '')
+  body.append('is_published', String(Boolean(isPublished)))
+  return request('/gallery', { method: 'POST', body })
+}
+
+export function updateGalleryImage(id, payload) {
+  return request(`/gallery/${id}`, { method: 'PATCH', body: JSON.stringify(payload) })
+}
+
+export function deleteGalleryImage(id) {
+  return request(`/gallery/${id}`, { method: 'DELETE' })
 }

@@ -50,6 +50,41 @@ export function getNews() {
   return request('/news')
 }
 
+function newsFormData(payload) {
+  const body = new FormData()
+  body.append('type', payload.type)
+  body.append('title', payload.title)
+  body.append('description', payload.description)
+  body.append('published_date', payload.published_date)
+  body.append('event_date', payload.event_date || '')
+  body.append('event_time', payload.event_time || '')
+  body.append('location', payload.location || '')
+  body.append('is_published', String(Boolean(payload.is_published)))
+  if (payload.image) body.append('image', payload.image)
+  if (payload.remove_image) body.append('remove_image', 'true')
+  return body
+}
+
+export function getAdminNews({ type = '', publication = '' } = {}) {
+  const params = new URLSearchParams()
+  if (type) params.set('type', type)
+  if (publication) params.set('publication', publication)
+  const query = params.toString()
+  return request(`/admin/news${query ? `?${query}` : ''}`)
+}
+
+export function createNews(payload) {
+  return request('/news', { method: 'POST', body: newsFormData(payload) })
+}
+
+export function updateNews(id, payload) {
+  return request(`/news/${id}`, { method: 'PATCH', body: newsFormData(payload) })
+}
+
+export function deleteNews(id) {
+  return request(`/news/${id}`, { method: 'DELETE' })
+}
+
 export function getGallery({ category = '' } = {}) {
   const query = category ? `?category=${encodeURIComponent(category)}` : ''
   return request(`/gallery${query}`)

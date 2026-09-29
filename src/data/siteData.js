@@ -14,6 +14,8 @@ export const imageAssets = {
 export const schoolLocation = {
   name: 'Jigisha International School',
   address: 'M-1 Jigisha, N-7, CIDCO, Chhatrapati Sambhajinagar, Maharashtra 431003, India',
+  phone: '83800 50082',
+  phoneHref: 'tel:8380050082',
   mapsQuery: 'Jigisha International School, M-1 Jigisha, N-7, CIDCO, Chhatrapati Sambhajinagar, Maharashtra 431003, India',
 }
 

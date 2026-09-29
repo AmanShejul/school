@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useInView, useReducedMotion } from 'framer-motion'
-import { galleryVisuals, imageAssets, learningSpaces, newsItems, reviews, schoolLocation, schoolStats } from './data/siteData'
-import { adminLogin, adminLogout, createAdmin, deleteAdmin, deleteAdminEnquiry, deleteAdminReview, deleteGalleryImage, getAdminEnquiries, getAdminEnquiry, getAdminGallery, getAdminMe, getAdminReviews, getAdminStats, getAdmins, getGallery, getNews, getReviews, resetAdminPassword, submitAdmissionEnquiry, submitContact, submitEnquiry, submitReview, updateAdmin, updateAdminEnquiry, updateAdminReview, updateGalleryImage, uploadGallery } from './services/api'
+import { galleryVisuals, imageAssets, learningSpaces, reviews, schoolLocation, schoolStats } from './data/siteData'
+import { adminLogin, adminLogout, createAdmin, createNews, deleteAdmin, deleteAdminEnquiry, deleteAdminReview, deleteGalleryImage, deleteNews, getAdminEnquiries, getAdminEnquiry, getAdminGallery, getAdminMe, getAdminNews, getAdminReviews, getAdminStats, getAdmins, getGallery, getNews, getReviews, resetAdminPassword, submitAdmissionEnquiry, submitContact, submitEnquiry, submitReview, updateAdmin, updateAdminEnquiry, updateAdminReview, updateGalleryImage, updateNews, uploadGallery } from './services/api'
 
 const logo = imageAssets.logo
 const heroImage = imageAssets.heroImage
@@ -27,12 +27,7 @@ function Icon({ name, size = 16, strokeWidth = 1.8 }) {
 }
 
 const navItems = [
-  { label: 'About', href: '/about', children: ['About school', 'Vision & mission', "Principal's message"] },
-  { label: 'Academics', href: '/academics', children: ['Curriculum', 'Teaching approach', 'Activities'] },
-  { label: 'Why Jigisha', href: '/why-jigisha', children: ['Our difference', 'School values', 'Learning spaces'] },
-  { label: 'Admissions', href: '/admissions', children: ['Admission process', 'Required documents', { label: 'Enquiry', href: '/admissions#enquiry-form' }] },
-  { label: 'Student life', href: '/student-life', children: ['Events', 'Sports', 'Arts & culture'] },
-  { label: 'Explore', href: '/gallery', children: [{ label: 'Gallery', href: '/gallery' }, { label: 'Achievements', href: '/achievements' }, { label: 'News', href: '/news' }] },
+  { label: 'Explore', href: '/gallery', children: [{ label: 'About', href: '/about' }, { label: 'Why Jigisha', href: '/why-jigisha' }, { label: 'Admissions', href: '/admissions' }, { label: 'Gallery', href: '/gallery' }, { label: 'News', href: '/news' }, { label: 'Contact', href: '/contact' }] },
 ]
 
 const journey = [
@@ -54,8 +49,8 @@ const pillars = [
 const faqs = [
   ['Where is Jigisha International School located?', `Our school is located at ${schoolLocation.address}.`],
   ['How can I enquire about admissions?', 'Use the enquiry form on this website. The school team can then share the current admission process and availability with you.'],
-  ['Which grades does the school offer?', 'Grade availability is best confirmed directly with the school team. Submit an enquiry and we will help you find the right information.'],
-  ['What information should I keep ready?', 'For a first enquiry, your parent name, student name, preferred grade, email and mobile number are enough.'],
+  ['Which grades does the school offer?', 'Jigisha International School offers education from Nursery to Grade 10, supporting students throughout their foundational and school years.'],
+  ['What information should I keep ready?', 'Parents should keep the student’s identification documents, recent health/medical records, previous academic records, photographs, and other documents required for the admission process ready. The school may request additional documents depending on the student’s admission requirements.'],
 ]
 
 function getLocation() {
@@ -106,6 +101,12 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (location.path !== '/achievements') return
+    window.history.replaceState({}, '', '/')
+    setLocation({ path: '/', hash: '' })
+  }, [location.path])
+
+  useEffect(() => {
     document.title = location.path === '/' ? 'Jigisha International School' : `${pageTitle(location.path)} · Jigisha International School`
     if (location.hash) {
       window.requestAnimationFrame(() => document.getElementById(location.hash.slice(1))?.scrollIntoView({ behavior: 'smooth' }))
@@ -118,7 +119,7 @@ function App() {
   if (location.path === '/admin') return <AdminDashboard navigate={navigate} />
 
   return <>
-    <div className="utility-bar"><div className="shell utility-inner"><span>JIGISHA INTERNATIONAL SCHOOL</span><span className="utility-location">N-7, CIDCO · Chhatrapati Sambhajinagar</span><a href="/#enquiry" onClick={event => { event.preventDefault(); navigate('/#enquiry') }}>Start an enquiry <Icon name="arrow-up-right" size={14} /></a></div></div>
+    <div className="utility-bar"><div className="shell utility-inner"><span>JIGISHA INTERNATIONAL SCHOOL</span><span className="utility-location">N-7, CIDCO · Chhatrapati Sambhajinagar</span><a href={schoolLocation.phoneHref}>{schoolLocation.phone}</a><a href="/#enquiry" onClick={event => { event.preventDefault(); navigate('/#enquiry') }}>Start an enquiry <Icon name="arrow-up-right" size={14} /></a></div></div>
     <header className={`site-header ${scrolled ? 'is-scrolled' : ''}`}>
       <div className="shell nav-inner">
         <a className="brand" href="/" onClick={event => { event.preventDefault(); navigate('/') }} aria-label="Jigisha International School home"><span className="brand-mark"><img src={logo} alt="" /></span><span className="brand-copy"><strong>Jigisha</strong><em>International School</em></span></a>
@@ -134,7 +135,7 @@ function App() {
         <button type="button" className={`menu-toggle ${menuOpen ? 'open' : ''}`} onClick={() => setMenuOpen(!menuOpen)} aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={menuOpen}><span></span><span></span></button>
       </div>
     </header>
-    {location.path === '/' ? <Home /> : <InnerPage path={location.path} />}
+    {location.path === '/' || location.path === '/achievements' ? <Home /> : <InnerPage path={location.path} />}
     <Footer />
   </>
 }
@@ -163,7 +164,7 @@ function AdminDashboard({ navigate }) {
 
   if (loading) return <main className="admin-page admin-login-page"><div className="admin-muted">Restoring your session…</div></main>
   if (!currentAdmin) return null
-  return <><EnquiryDashboard navigate={navigate} currentAdmin={currentAdmin} /><main className="admin-page admin-review-page"><div className="admin-shell"><GalleryManagementPanel navigate={navigate} /><AdminReviewsPanel navigate={navigate} />{currentAdmin.role === 'super_admin' ? <AdminManagementPanel navigate={navigate} currentAdmin={currentAdmin} /> : null}</div></main></>
+  return <><EnquiryDashboard navigate={navigate} currentAdmin={currentAdmin} /><main className="admin-page admin-review-page"><div className="admin-shell"><GalleryManagementPanel navigate={navigate} /><NewsManagementPanel navigate={navigate} /><AdminReviewsPanel navigate={navigate} />{currentAdmin.role === 'super_admin' ? <AdminManagementPanel navigate={navigate} currentAdmin={currentAdmin} /> : null}</div></main></>
 }
 
 function EnquiryDashboard({ navigate, currentAdmin }) {
@@ -311,6 +312,119 @@ function GalleryManagementPanel({ navigate }) {
   return <section id="gallery-management" className="admin-panel admin-gallery-panel"><div className="admin-panel-head"><div><p className="admin-eyebrow">Website content</p><h2>Gallery Management</h2><span>{items.length} {items.length === 1 ? 'photo' : 'photos'} · JPG, PNG and WEBP up to 10 MB</span></div><div className="admin-gallery-toolbar"><label><span className="sr-only">Filter gallery by category</span><select value={categoryFilter} onChange={event => setCategoryFilter(event.target.value)}><option value="">All categories</option>{galleryCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></label><button type="button" className="admin-refresh" onClick={openUpload}>+ Add photos</button><button type="button" className="admin-refresh admin-refresh-light" onClick={load}>Refresh</button></div></div>{error ? <p className="admin-alert" role="alert">{error}</p> : null}{loading ? <div className="admin-empty">Loading gallery…</div> : items.length === 0 ? <div className="admin-empty"><strong>No gallery photos yet.</strong><span>Upload the first school photo to publish it on the website.</span></div> : <div className="admin-gallery-grid">{items.map(item => <article className="admin-gallery-card" key={item.id}><div className="admin-gallery-media"><img src={item.image_url} alt={item.title || item.category} loading="lazy" onError={event => { event.currentTarget.style.display = 'none' }} /><span className="admin-gallery-fallback">Image unavailable</span><span className={`admin-gallery-badge ${item.is_published ? 'is-published' : 'is-unpublished'}`}>{item.is_published ? 'Published' : 'Unpublished'}</span></div><div className="admin-gallery-copy"><div className="admin-gallery-meta"><span>{item.category}</span><time>{formatAdminDate(item.created_at)}</time></div><h3>{item.title || 'Untitled photo'}</h3>{item.description ? <p>{item.description}</p> : null}<div className="admin-row-actions admin-gallery-actions"><button type="button" onClick={() => openEdit(item)}>Edit</button><button type="button" onClick={() => togglePublished(item)}>{item.is_published ? 'Unpublish' : 'Publish'}</button><button type="button" className="admin-delete" onClick={() => remove(item)}>Delete</button></div></div></article>)}</div>}{uploadOpen ? <div className="admin-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeUpload() }}><section className="admin-detail admin-gallery-editor" role="dialog" aria-modal="true" aria-labelledby="gallery-upload-title"><button type="button" className="admin-modal-close" onClick={closeUpload} aria-label="Close upload form"><Icon name="close" size={21} /></button><p className="admin-eyebrow">New gallery photos</p><h2 id="gallery-upload-title">Add photos.</h2><form className="admin-gallery-form" onSubmit={submitUpload}><label>Select photos<input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" multiple onChange={chooseFiles} /></label>{selectedFiles.length ? <div className="admin-upload-previews">{selectedFiles.map(item => <div key={`${item.file.name}-${item.file.lastModified}`}><img src={item.preview} alt={item.file.name} /><span>{item.file.name}</span></div>)}</div> : <p className="admin-upload-hint">You can select multiple photos at once. Preview them here before uploading.</p>}<div className="admin-gallery-form-grid"><label>Category<select name="category" value={uploadForm.category} onChange={updateUploadForm}>{galleryCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></label><label>Title for all selected photos<input name="title" value={uploadForm.title} onChange={updateUploadForm} maxLength="160" placeholder="Optional shared title" /></label></div><label>Description for all selected photos<textarea name="description" value={uploadForm.description} onChange={updateUploadForm} rows="3" maxLength="1000" placeholder="Optional context for visitors" /></label><label className="admin-checkbox"><input type="checkbox" name="isPublished" checked={uploadForm.isPublished} onChange={updateUploadForm} /> Publish immediately</label><div className="admin-form-actions"><button type="button" className="admin-secondary-button" onClick={closeUpload}>Cancel</button><button type="submit" className="admin-primary-button" disabled={saving}>{saving ? 'Uploading…' : 'Upload photos'}</button></div></form></section></div> : null}{editItem ? <div className="admin-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setEditItem(null) }}><section className="admin-detail admin-gallery-editor" role="dialog" aria-modal="true" aria-labelledby="gallery-edit-title"><button type="button" className="admin-modal-close" onClick={() => setEditItem(null)} aria-label="Close edit form"><Icon name="close" size={21} /></button><p className="admin-eyebrow">Edit gallery photo</p><h2 id="gallery-edit-title">Update details.</h2><div className="admin-edit-preview"><img src={editItem.image_url} alt={editItem.title || editItem.category} /></div><form className="admin-gallery-form" onSubmit={saveEdit}><label>Title<input name="title" value={editForm.title} onChange={updateEditForm} maxLength="160" /></label><label>Description<textarea name="description" value={editForm.description} onChange={updateEditForm} rows="4" maxLength="1000" /></label><label>Category<select name="category" value={editForm.category} onChange={updateEditForm}>{galleryCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></label><label className="admin-checkbox"><input type="checkbox" name="isPublished" checked={editForm.isPublished} onChange={updateEditForm} /> Published on public gallery</label><div className="admin-form-actions"><button type="button" className="admin-secondary-button" onClick={() => setEditItem(null)}>Cancel</button><button type="submit" className="admin-primary-button" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</button></div></form></section></div> : null}{toast ? <div className="admin-toast" role="status">{toast}</div> : null}</section>
 }
 
+const blankNewsForm = { type: 'news', title: '', description: '', published_date: new Date().toISOString().slice(0, 10), event_date: '', event_time: '', location: '', is_published: true, remove_image: false }
+
+function NewsManagementPanel({ navigate }) {
+  const [items, setItems] = useState([])
+  const [filters, setFilters] = useState({ type: '', publication: '' })
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [toast, setToast] = useState('')
+  const [editor, setEditor] = useState(null)
+  const [form, setForm] = useState(blankNewsForm)
+  const [selectedImage, setSelectedImage] = useState(null)
+  const [imagePreview, setImagePreview] = useState('')
+
+  const load = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const payload = await getAdminNews(filters)
+      setItems(payload.items || [])
+    } catch (requestError) {
+      if (requestError.status === 401) navigate('/admin/login')
+      else setError(requestError.message || 'Unable to load news and events.')
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { load() }, [filters.type, filters.publication])
+  useEffect(() => { if (!toast) return undefined; const timer = window.setTimeout(() => setToast(''), 3000); return () => window.clearTimeout(timer) }, [toast])
+
+  const clearImage = () => {
+    if (imagePreview) URL.revokeObjectURL(imagePreview)
+    setSelectedImage(null)
+    setImagePreview('')
+  }
+  const closeEditor = () => { clearImage(); setEditor(null) }
+  const openCreate = () => { setForm({ ...blankNewsForm }); setError(''); clearImage(); setEditor({ mode: 'create' }) }
+  const openEdit = item => {
+    setForm({ type: item.type, title: item.title || '', description: item.description || '', published_date: item.published_date || '', event_date: item.event_date || '', event_time: item.event_time || '', location: item.location || '', is_published: Boolean(item.is_published), remove_image: false })
+    setError('')
+    clearImage()
+    setEditor({ mode: 'edit', item })
+  }
+  const updateField = event => {
+    const { name, value, type, checked } = event.target
+    setForm(current => ({ ...current, [name]: type === 'checkbox' ? checked : value }))
+  }
+  const chooseImage = event => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024) {
+      setError('Use a JPG, PNG or WEBP image up to 10 MB.')
+      event.target.value = ''
+      return
+    }
+    clearImage()
+    setSelectedImage(file)
+    setImagePreview(URL.createObjectURL(file))
+    setForm(current => ({ ...current, remove_image: false }))
+    setError('')
+    event.target.value = ''
+  }
+  const submit = async event => {
+    event.preventDefault()
+    if (!form.title.trim() || !form.description.trim() || !form.published_date || (form.type === 'event' && !form.event_date)) {
+      setError(form.type === 'event' && !form.event_date ? 'Event date is required for events.' : 'Title, description and published date are required.')
+      return
+    }
+    const intent = event.nativeEvent.submitter?.value
+    setSaving(true)
+    setError('')
+    try {
+      const payload = { ...form, is_published: intent === 'publish' || (intent !== 'draft' && form.is_published), image: selectedImage }
+      if (editor.mode === 'create') await createNews(payload)
+      else await updateNews(editor.item.id, payload)
+      setToast(editor.mode === 'create' ? (payload.is_published ? 'News or event published.' : 'Draft saved.') : 'News or event updated.')
+      closeEditor()
+      await load()
+    } catch (requestError) {
+      if (requestError.status === 401) navigate('/admin/login')
+      else setError(requestError.message || 'Unable to save this news or event.')
+    } finally { setSaving(false) }
+  }
+  const togglePublished = async item => {
+    try {
+      await updateNews(item.id, { type: item.type, title: item.title, description: item.description, published_date: item.published_date, event_date: item.event_date || '', event_time: item.event_time || '', location: item.location || '', is_published: !item.is_published })
+      setToast(item.is_published ? 'News or event unpublished.' : 'News or event published.')
+      await load()
+    } catch (requestError) {
+      if (requestError.status === 401) navigate('/admin/login')
+      else setError(requestError.message || 'Unable to change publication status.')
+    }
+  }
+  const remove = async item => {
+    if (!window.confirm('Are you sure you want to delete this news/event?')) return
+    try {
+      await deleteNews(item.id)
+      setToast('News or event deleted.')
+      await load()
+    } catch (requestError) {
+      if (requestError.status === 401) navigate('/admin/login')
+      else setError(requestError.message || 'Unable to delete this news or event.')
+    }
+  }
+
+  return <section id="news-management" className="admin-panel admin-news-panel">
+    <div className="admin-panel-head"><div><p className="admin-eyebrow">Website content</p><h2>News &amp; Events</h2><span>{items.length} {items.length === 1 ? 'item' : 'items'} · Published updates and drafts</span></div><div className="admin-news-toolbar"><label><span className="sr-only">Filter by type</span><select value={filters.type} onChange={event => setFilters(current => ({ ...current, type: event.target.value }))}><option value="">All types</option><option value="news">News</option><option value="event">Events</option></select></label><label><span className="sr-only">Filter by publication</span><select value={filters.publication} onChange={event => setFilters(current => ({ ...current, publication: event.target.value }))}><option value="">All statuses</option><option value="published">Published</option><option value="draft">Drafts</option></select></label><button type="button" className="admin-refresh" onClick={openCreate}>+ Add News / Event</button><button type="button" className="admin-refresh admin-refresh-light" onClick={load}>Refresh</button></div></div>
+    {error ? <p className="admin-alert" role="alert">{error}</p> : null}
+    {loading ? <div className="admin-empty">Loading news and events…</div> : items.length === 0 ? <div className="admin-empty"><strong>No news or events found.</strong><span>Create a published update or save a draft for later.</span></div> : <div className="admin-news-list">{items.map(item => <article className="admin-news-card" key={item.id}><div className="admin-news-card-image">{item.image_url ? <img src={item.image_url} alt="" loading="lazy" /> : <span>J</span>}<b className={item.is_published ? 'is-published' : 'is-unpublished'}>{item.is_published ? 'Published' : 'Draft'}</b></div><div className="admin-news-card-copy"><div className="admin-gallery-meta"><span>{item.type === 'event' ? 'Event' : 'News'}</span><time>{formatAdminDate(item.date || item.published_date)}</time></div><h3>{item.title}</h3><p>{item.description}</p>{item.type === 'event' ? <small>{item.event_date}{item.event_time ? ' · ' + item.event_time : ''}{item.location ? ' · ' + item.location : ''}</small> : null}<div className="admin-row-actions admin-news-actions"><button type="button" onClick={() => openEdit(item)}>Edit</button><button type="button" onClick={() => togglePublished(item)}>{item.is_published ? 'Unpublish' : 'Publish'}</button><button type="button" className="admin-delete" onClick={() => remove(item)}>Delete</button></div></div></article>)}</div>}
+    {editor ? <div className="admin-modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) closeEditor() }}><section className="admin-detail admin-news-editor" role="dialog" aria-modal="true" aria-labelledby="news-editor-title"><button type="button" className="admin-modal-close" onClick={closeEditor} aria-label="Close news form"><Icon name="close" size={21} /></button><p className="admin-eyebrow">{editor.mode === 'create' ? 'New website update' : 'Edit website update'}</p><h2 id="news-editor-title">{editor.mode === 'create' ? 'Share what’s happening.' : 'Update this story.'}</h2><form className="admin-gallery-form" onSubmit={submit}><div className="admin-news-form-grid"><label>Type<select name="type" value={form.type} onChange={updateField}><option value="news">News</option><option value="event">Event</option></select></label><label>Published date<input name="published_date" type="date" value={form.published_date} onChange={updateField} required /></label></div><label>Title<input name="title" value={form.title} onChange={updateField} maxLength="160" required /></label><label>Description<textarea name="description" value={form.description} onChange={updateField} rows="5" maxLength="4000" required /></label>{form.type === 'event' ? <div className="admin-news-form-grid"><label>Event date<input name="event_date" type="date" value={form.event_date} onChange={updateField} required /></label><label>Event time<input name="event_time" type="time" value={form.event_time} onChange={updateField} /></label><label>Location<input name="location" value={form.location} onChange={updateField} maxLength="180" placeholder="Optional location" /></label></div> : null}<label>Cover image<input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={chooseImage} /></label>{imagePreview || (editor.item?.image_url && !form.remove_image) ? <div className="admin-news-image-preview"><img src={imagePreview || editor.item.image_url} alt="Cover preview" />{editor.mode === 'edit' && !imagePreview ? <label className="admin-checkbox"><input type="checkbox" name="remove_image" checked={form.remove_image} onChange={updateField} /> Remove current image</label> : null}</div> : null}<label className="admin-checkbox"><input type="checkbox" name="is_published" checked={form.is_published} onChange={updateField} /> Published on the public website</label><div className="admin-form-actions"><button type="button" className="admin-secondary-button" onClick={closeEditor}>Cancel</button><button type="submit" name="intent" value="draft" className="admin-secondary-button" disabled={saving}>Save Draft</button><button type="submit" name="intent" value="publish" className="admin-primary-button" disabled={saving}>{saving ? 'Saving…' : 'Publish'}</button></div></form></section></div> : null}
+    {toast ? <div className="admin-toast" role="status">{toast}</div> : null}
+  </section>
+}
+
 function AdminReviewsPanel({ navigate }) {
   const [items, setItems] = useState([])
   const [status, setStatus] = useState('')
@@ -425,9 +539,9 @@ function Home() {
 
     <section className="section values-section section-dark"><div className="shell values-grid"><div className="values-intro reveal"><p className="eyebrow eyebrow-light"><span></span> What guides us</p><h2>A strong start for a <i>bright</i> tomorrow.</h2><p>Our values are simple, human and designed to be lived every day — in classrooms, on the playground and in the way we care for one another.</p><div className="values-seal"><img src={logo} alt="Official Jigisha International School crest" /><span>Identity in<br /><strong>motion</strong></span></div><a className="text-link light-link" href="/why-jigisha">Why Jigisha <Icon name="arrow-up-right" size={15} /></a></div><div className="pillars-grid">{pillars.map(([number, title, text]) => <div className="pillar reveal" key={number}><span>{number}</span><h3>{title}</h3><p>{text}</p></div>)}</div></div></section>
 
-    <section className="section enquiry-section" id="enquiry"><div className="shell enquiry-grid"><div className="enquiry-copy reveal"><p className="eyebrow"><span></span> Begin a conversation</p><h2>Let&apos;s find the<br /><i>right next step.</i></h2><p>Tell us a little about your family and the school team will get back to you with the information you need.</p><div className="enquiry-actions"><a className="button button-outline" href="/admissions">Explore Admissions <Icon name="arrow-up-right" size={15} /></a><a className="button button-orange" href="#enquiry-form">Enquire Now <Icon name="arrow-up-right" size={15} /></a></div><div className="contact-note"><span className="note-icon"><Icon name="pin" size={16} /></span><div><strong>Visit the school</strong><p>{schoolLocation.address}</p></div></div></div><EnquiryForm /></div></section>
+    <section className="section enquiry-section" id="enquiry"><div className="shell enquiry-grid"><div className="enquiry-copy reveal"><p className="eyebrow"><span></span> Begin a conversation</p><h2>Let&apos;s find the<br /><i>right next step.</i></h2><p>Tell us a little about your family and the school team will get back to you with the information you need.</p><div className="enquiry-actions"><a className="button button-outline" href="/admissions">Explore Admissions <Icon name="arrow-up-right" size={15} /></a><a className="button button-orange" href="#enquiry-form">Enquire Now <Icon name="arrow-up-right" size={15} /></a></div><div className="contact-note"><span className="note-icon"><Icon name="pin" size={16} /></span><div><strong>Visit the school</strong><p>{schoolLocation.address}</p><a href={schoolLocation.phoneHref}>{schoolLocation.phone}</a></div></div></div><EnquiryForm /></div></section>
 
-    <AchievementsSection /><GallerySection />
+    <GallerySection />
     <ReviewsSection />
     <NewsSection />
 
@@ -456,11 +570,6 @@ function StatNumber({ value }) {
 
 function LearningSpacesSection() {
   return <section className="section facilities-section"><div className="shell"><div className="section-head split-head"><div><p className="eyebrow"><span></span> Learning spaces</p><h2>Places to <i>learn.</i></h2></div><p>A starting point for the learning, discovery, movement and making that shape everyday school life.</p></div><div className="facilities-grid">{learningSpaces.map((space, index) => <Reveal className={`facility-card ${space.tone}`} delay={index * .07} key={space.id}><div className="facility-art">{space.image ? <img className="facility-image" src={space.image} alt={space.title} loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} /> : <div className="facility-icon"><Icon name={space.icon || 'sparkle'} size={34} /></div>}<span>{space.number}</span><div className="facility-orbit"></div><div className="facility-orbit small"></div><b>J</b>{space.gallery?.length ? <div className="facility-gallery" aria-hidden="true">{space.gallery.slice(0, 3).map((image) => <img key={image} src={image} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} />)}</div> : null}</div><div className="facility-copy"><h3>{space.title}</h3>{space.shortDescription ? <p>{space.shortDescription}</p> : null}{space.description ? <p className="facility-description">{space.description}</p> : null}{space.details?.length ? <ul className="facility-details">{space.details.map((detail) => <li key={detail}>{detail}</li>)}</ul> : null}{space.href && space.cta ? <a href={space.href}>{space.cta} <Icon name="arrow-up-right" size={15} /></a> : null}</div></Reveal>)}</div></div></section>
-}
-
-function AchievementsSection() {
-  const hasAchievements = false
-  return <section className="section achievements-section"><div className="shell achievements-grid"><div><p className="eyebrow"><span></span> Achievements</p><h2>Celebrate the <i>journey.</i></h2><p className="muted-copy">Celebrating the achievements and milestones of our school community.</p><a className="text-link" href="/achievements">Achievements will be shared here <Icon name="arrow-up-right" size={15} /></a></div><div className="achievement-carousel" aria-label="Jigisha achievements"><div className="achievement-carousel-head"><span>{hasAchievements ? 'Verified milestones' : 'Awaiting verified milestones'}</span><div><button type="button" disabled={!hasAchievements} aria-label="Previous achievement"><Icon name="chevron-left" size={17} /></button><button type="button" disabled={!hasAchievements} aria-label="Next achievement"><Icon name="chevron-right" size={17} /></button></div></div><div className="achievement-empty"><span className="achievement-star"><Icon name="sparkle" size={30} /></span><span className="eyebrow"><span></span> Jigisha community</span><h3>Celebrating the moments<br /><i>that make us proud.</i></h3><p>Achievements and milestones will be shared here when they are ready.</p><div className="achievement-progress"><span></span></div></div></div></div></section>
 }
 
 function GallerySection() {
@@ -504,12 +613,13 @@ function LegacyGallerySection() {
 }
 
 function NewsSection() {
-  const [items, setItems] = useState(newsItems)
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
   useEffect(() => {
-    getNews().then(payload => { if (payload.items?.length) setItems(payload.items) }).catch(() => undefined)
+    getNews().then(payload => setItems(payload.items || [])).catch(() => setItems([])).finally(() => setLoading(false))
     return undefined
   }, [])
-  return <section className="section news-section"><div className="shell"><div className="section-head split-head"><div><p className="eyebrow"><span></span> News & events</p><h2>From the <i>community.</i></h2></div><p>School news and event updates will appear here.</p></div>{items.length ? <div className="news-grid">{items.map((item, index) => <Reveal className="news-card" delay={index * .07} key={item.title}><div className={`news-art news-art-${(index % 3) + 1}`}>{item.image ? <img src={item.image} alt="" loading="lazy" /> : null}<span>{String(index + 1).padStart(2, '0')}</span><b>J</b></div><div className="news-copy"><div><small>{item.date}</small><small>{item.category}</small></div><h3>{item.title}</h3><p>{item.text || item.description}</p><a href="/news">Read more <Icon name="arrow-up-right" size={15} /></a></div></Reveal>)}</div> : <div className="news-empty"><span className="news-empty-mark"><Icon name="sparkle" size={27} /></span><div><p className="eyebrow"><span></span> News & events</p><h3>School news and event updates will appear here.</h3><p>Verified announcements and community stories will be shared here when ready.</p></div><a className="text-link" href="/contact">Contact the school <Icon name="arrow-up-right" size={15} /></a></div>}</div></section>
+  return <section className="section news-section"><div className="shell"><div className="section-head split-head"><div><p className="eyebrow"><span></span> News & events</p><h2>From the <i>community.</i></h2></div><p>{loading ? 'Loading the latest school updates.' : 'School news and event updates will appear here.'}</p></div>{items.length ? <div className="news-grid">{items.map((item, index) => <Reveal className="news-card" delay={index * .07} key={item.id || item.title}><div className={`news-art news-art-${(index % 3) + 1}`}>{item.image_url || item.image ? <img src={item.image_url || item.image} alt="" loading="lazy" /> : null}<span>{String(index + 1).padStart(2, '0')}</span><b>J</b></div><div className="news-copy"><div><small>{item.date || item.published_date}</small><small>{item.category || (item.type === 'event' ? 'Event' : 'News')}</small></div><h3>{item.title}</h3><p>{item.description || item.text}</p>{item.type === 'event' ? <small className="news-event-details">{item.event_date}{item.event_time ? ' · ' + item.event_time : ''}{item.location ? ' · ' + item.location : ''}</small> : null}<a href="/news">Read more <Icon name="arrow-up-right" size={15} /></a></div></Reveal>)}</div> : <div className="news-empty"><span className="news-empty-mark"><Icon name="sparkle" size={27} /></span><div><p className="eyebrow"><span></span> News & events</p><h3>{loading ? 'Loading school updates.' : 'School news and event updates will appear here.'}</h3><p>{loading ? 'Please wait a moment.' : 'Verified announcements and community stories will be shared here when ready.'}</p></div><a className="text-link" href="/contact">Contact the school <Icon name="arrow-up-right" size={15} /></a></div>}</div></section>
 }
 
 function ReviewsSection() {
@@ -609,7 +719,7 @@ function ContactSection() {
   const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodedQuery}`
   const mapsSearchUrl = `https://www.google.com/maps/search/?api=1&query=${encodedQuery}`
 
-  return <section className="contact-section section-dark"><div className="shell contact-grid"><div><p className="eyebrow eyebrow-light"><span></span> Visit Jigisha</p><h2>Find your way<br /><i>to us.</i></h2><p className="contact-lead"><strong>{schoolLocation.name}</strong><br />{schoolLocation.address}</p><div className="location-actions"><a className="button button-orange" href={directionsUrl} target="_blank" rel="noopener noreferrer">Get Directions <Icon name="arrow-up-right" size={15} /></a><a className="text-link light-link" href={mapsSearchUrl} target="_blank" rel="noopener noreferrer">Open in Google Maps <Icon name="arrow-up-right" size={15} /></a></div></div><div className="map-card"><iframe className="map-embed" src={mapEmbedUrl} title={`Google Maps location for ${schoolLocation.name}`} aria-label={`Map showing ${schoolLocation.name} at ${schoolLocation.address}`} loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen></iframe></div></div></section>
+  return <section className="contact-section section-dark"><div className="shell contact-grid"><div><p className="eyebrow eyebrow-light"><span></span> Visit Jigisha</p><h2>Find your way<br /><i>to us.</i></h2><p className="contact-lead"><strong>{schoolLocation.name}</strong><br />{schoolLocation.address}<br /><a href={schoolLocation.phoneHref}>{schoolLocation.phone}</a></p><div className="location-actions"><a className="button button-orange" href={directionsUrl} target="_blank" rel="noopener noreferrer">Get Directions <Icon name="arrow-up-right" size={15} /></a><a className="text-link light-link" href={mapsSearchUrl} target="_blank" rel="noopener noreferrer">Open in Google Maps <Icon name="arrow-up-right" size={15} /></a></div></div><div className="map-card"><iframe className="map-embed" src={mapEmbedUrl} title={`Google Maps location for ${schoolLocation.name}`} aria-label={`Map showing ${schoolLocation.name} at ${schoolLocation.address}`} loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen></iframe></div></div></section>
 }
 
 const emptyEnquiry = { parent: '', student: '', email: '', mobile: '', grade: '', message: '' }
@@ -631,7 +741,7 @@ function EnquiryForm({ endpoint = 'enquiry' } = {}) {
     } catch { setStatus('error') }
   }
   if (status === 'success') return <div className="form-success reveal"><span className="success-mark"><Icon name="check" size={25} /></span><p className="eyebrow"><span></span> Thank you</p><h3>Your enquiry has been received.</h3><p>The school team will contact you with the next steps.</p><button type="button" className="text-link" onClick={() => setStatus('idle')}>Send another enquiry <Icon name="arrow-up-right" size={15} /></button></div>
-  return <form id="enquiry-form" className="enquiry-form reveal delay-one" onSubmit={submit} noValidate><div className="form-heading"><span>Enquiry form</span><small>All fields marked * are required</small></div>{status === 'error' ? <p className="form-error" role="alert">Please check the required fields and try again. If the problem continues, contact the school directly.</p> : null}<div className="form-row"><label>Parent / guardian name *<input required minLength="2" name="parent" value={form.parent} onChange={update} placeholder="Your full name" /></label><label>Student name *<input required minLength="2" name="student" value={form.student} onChange={update} placeholder="Student's full name" /></label></div><div className="form-row"><label>Email address *<input required type="email" name="email" value={form.email} onChange={update} placeholder="you@example.com" /></label><label>Mobile number *<input required minLength="7" name="mobile" value={form.mobile} onChange={update} placeholder="Your mobile number" /></label></div><div className="form-row"><label>Grade / standard<select required name="grade" value={form.grade} onChange={update}><option value="">Select a grade</option><option>Early years</option><option>Primary school</option><option>Middle school</option><option>Secondary school</option><option>Not sure yet</option></select></label><label>What can we help with?<input name="message" value={form.message} onChange={update} placeholder="Tell us a little more" /></label></div><div className="form-footer"><p>By submitting, you agree that Jigisha may use these details to respond to your enquiry.</p><button className="button button-blue" type="submit" disabled={status === 'loading'}>{status === 'loading' ? 'Sending…' : 'Send enquiry'} <Icon name="arrow-up-right" size={15} /></button></div></form>
+  return <form id="enquiry-form" className="enquiry-form reveal delay-one" onSubmit={submit} noValidate><div className="form-heading"><span>Enquiry form</span><small>All fields marked * are required</small></div>{status === 'error' ? <p className="form-error" role="alert">Please check the required fields and try again. If the problem continues, contact the school directly.</p> : null}<div className="form-row"><label>Parent / guardian name *<input required minLength="2" name="parent" value={form.parent} onChange={update} placeholder="Your full name" /></label><label>Student name *<input required minLength="2" name="student" value={form.student} onChange={update} placeholder="Student's full name" /></label></div><div className="form-row"><label>Email address *<input required type="email" name="email" value={form.email} onChange={update} placeholder="you@example.com" /></label><label>Mobile number *<input required minLength="7" name="mobile" value={form.mobile} onChange={update} placeholder="Your mobile number" /></label></div><div className="form-row"><label>Grade / standard<select required name="grade" value={form.grade} onChange={update}><option value="">Select a grade</option><option>Early years</option><option>Primary school</option><option>Middle school</option><option>Secondary school</option><option>Not sure yet</option></select></label><label>What can we help with?<input name="message" value={form.message} onChange={update} placeholder="Tell us a little more" /></label></div><div className="form-footer"><p>By submitting, you agree that Jigisha may use these details to respond to your enquiry.<br /><a href={schoolLocation.phoneHref}>{schoolLocation.phone}</a></p><button className="button button-blue" type="submit" disabled={status === 'loading'}>{status === 'loading' ? 'Sending…' : 'Send enquiry'} <Icon name="arrow-up-right" size={15} /></button></div></form>
 }
 
 function ContactForm() {
@@ -655,31 +765,41 @@ function FaqItem({ question, answer, openByDefault }) {
 }
 
 function InnerPage({ path }) {
-  return path === '/gallery' ? <><ContentInnerPage path={path} /><GallerySection /></> : <ContentInnerPage path={path} />
+  if (path === '/gallery') return <><ContentInnerPage path={path} /><GallerySection /></>
+  if (path === '/news') return <><ContentInnerPage path={path} /><NewsSection /></>
+  return <ContentInnerPage path={path} />
 }
 
 function ContentInnerPage({ path }) {
   const config = pageConfig(path)
-  return <main className="inner-page"><section className="inner-hero section-dark"><div className="shell inner-hero-grid"><div><p className="eyebrow eyebrow-light"><span></span> Jigisha International School</p><h1>{config.title}<br /><i>{config.italic}</i></h1><p>{config.intro}</p></div><div className="inner-emblem"><img src={logo} alt="Jigisha International School official crest" loading="lazy" /><span>Establishing a place<br />to learn & belong</span></div></div></section><section className="section page-content"><div className="shell page-content-grid"><aside><p className="eyebrow"><span></span> Explore</p><nav>{['/about', '/academics', '/why-jigisha', '/admissions', '/student-life', '/gallery', '/achievements', '/news', '/contact'].map(href => <a className={path === href ? 'active' : ''} href={href} key={href}>{pageTitle(href)} <Icon name="arrow-up-right" size={14} /></a>)}</nav></aside><div className="page-main"><div className="page-visual"><div className="page-visual-rings"></div><img src={logo} alt="Official Jigisha International School crest" loading="lazy" /><span>{pageTitle(path)} / Jigisha</span></div>{config.blocks.map((block, index) => <div className="content-block reveal" id={block.id} key={index}>{block.type === 'heading' ? <h2>{block.text}</h2> : block.type === 'list' ? <div className="content-list">{block.items.map(item => <div key={item[0]}><span>{item[0]}</span><div><h3>{item[1]}</h3><p>{item[2]}</p></div></div>)}</div> : <p>{block.text}</p>}</div>)}{path === '/admissions' ? <div className="page-form-section"><EnquiryForm endpoint="admission" /></div> : null}{path === '/contact' ? <div className="page-form-section"><ContactForm /></div> : null}</div></div></section></main>
+  return <main className="inner-page"><section className="inner-hero section-dark"><div className="shell inner-hero-grid"><div><p className="eyebrow eyebrow-light"><span></span> Jigisha International School</p><h1>{config.title}<br /><i>{config.italic}</i></h1><p>{config.intro}</p></div><div className="inner-emblem"><img src={logo} alt="Jigisha International School official crest" loading="lazy" /><span>Establishing a place<br />to learn & belong</span></div></div></section><section className="section page-content"><div className="shell page-content-grid"><aside><p className="eyebrow"><span></span> Explore</p><nav>{['/about', '/academics', '/why-jigisha', '/admissions', '/student-life', '/gallery', '/news', '/contact'].map(href => <a className={path === href ? 'active' : ''} href={href} key={href}>{pageTitle(href)} <Icon name="arrow-up-right" size={14} /></a>)}</nav></aside><div className="page-main"><div className="page-visual"><div className="page-visual-rings"></div><img src={logo} alt="Official Jigisha International School crest" loading="lazy" /><span>{pageTitle(path)} / Jigisha</span></div>{config.blocks.map((block, index) => <div className="content-block reveal" id={block.id} key={index}>{block.type === 'heading' ? <h2>{block.text}</h2> : block.type === 'list' ? <div className="content-list">{block.items.map(item => <div key={item[0]}><span>{item[0]}</span><div><h3>{item[1]}</h3><p>{item[2]}</p></div></div>)}</div> : <p>{block.text}</p>}</div>)}{path === '/admissions' ? <div className="page-form-section"><EnquiryForm endpoint="admission" /></div> : null}{path === '/contact' ? <div className="page-form-section"><ContactForm /></div> : null}</div></div></section></main>
 }
 
 function Footer() {
-  return <footer className="site-footer"><div className="shell footer-top"><div className="footer-brand"><a className="brand brand-footer" href="/"><span className="brand-mark"><img src={logo} alt="" /></span><span className="brand-copy"><strong>Jigisha</strong><em>International School</em></span></a><p>A place to learn with curiosity, grow with confidence and belong with purpose.</p></div><div className="footer-column"><h4>Explore</h4><a href="/about">About school</a><a href="/academics">Academics</a><a href="/why-jigisha">Why Jigisha</a><a href="/admissions">Admissions</a></div><div className="footer-column"><h4>Discover</h4><a href="/student-life">Student life</a><a href="/gallery">Gallery</a><a href="/achievements">Achievements</a><a href="/news">News & events</a></div><div className="footer-column footer-address"><h4>Find us</h4><p>{schoolLocation.name}<br />{schoolLocation.address}</p><a href="/contact">Contact the school <Icon name="arrow-up-right" size={15} /></a></div></div><div className="shell footer-bottom"><span>© {new Date().getFullYear()} Jigisha International School</span><span>Made for curious minds <b><Icon name="sparkle" size={14} /></b></span><span><a href="/">Privacy</a> · <a href="/">Terms</a></span></div></footer>
+  return <footer className="site-footer"><div className="shell footer-top"><div className="footer-brand"><a className="brand brand-footer" href="/"><span className="brand-mark"><img src={logo} alt="" /></span><span className="brand-copy"><strong>Jigisha</strong><em>International School</em></span></a><p>A place to learn with curiosity, grow with confidence and belong with purpose.</p></div><div className="footer-column"><h4>Explore</h4><a href="/about">About school</a><a href="/academics">Academics</a><a href="/why-jigisha">Why Jigisha</a><a href="/admissions">Admissions</a></div><div className="footer-column"><h4>Discover</h4><a href="/student-life">Student life</a><a href="/gallery">Gallery</a><a href="/news">News & events</a></div><div className="footer-column footer-address"><h4>Find us</h4><p>{schoolLocation.name}<br />{schoolLocation.address}</p><a href={schoolLocation.phoneHref}>{schoolLocation.phone}</a><a href="/contact">Contact the school <Icon name="arrow-up-right" size={15} /></a></div></div><div className="shell footer-bottom"><span>© {new Date().getFullYear()} Jigisha International School</span><span>Made for curious minds <b><Icon name="sparkle" size={14} /></b></span><span><a href="/">Privacy</a> · <a href="/">Terms</a></span></div></footer>
 }
 
-function pageTitle(path) { return ({ '/about': 'About', '/academics': 'Academics', '/why-jigisha': 'Why Jigisha', '/admissions': 'Admissions', '/student-life': 'Student life', '/gallery': 'Gallery', '/achievements': 'Achievements', '/news': 'News', '/contact': 'Contact' })[path] || 'Jigisha' }
-
+function pageTitle(path) { return ({ '/about': 'About', '/academics': 'Academics', '/why-jigisha': 'Why Jigisha', '/admissions': 'Admissions', '/student-life': 'Student life', '/gallery': 'Gallery', '/news': 'News', '/contact': 'Contact' })[path] || 'Jigisha' }
 function pageConfig(path) {
+
+  /*
+
+
+  const base = {Jigisha International School is being built as a welcoming space where curiosity is encouraged, questions are valued, and every student is given the confidence to discover their potential. The school’s identity is rooted in the belief that education should go beyond textbooks and examinations, helping young people understand the world around them — and their place in it. Through a balanced approach to academics, creativity, values, and personal development, Jigisha strives to create an environment where students can learn with purpose and grow with confidence.
+
+Over the years, the school has been a meaningful part of the educational journeys of many students, supporting them as they discover their interests, develop their abilities, and prepare for the opportunities ahead. Many students who have passed through the school have gone on to pursue higher education, build successful careers, and make meaningful contributions in their chosen fields. Their journeys reflect the importance of a strong foundation, supportive guidance, and the confidence to take on new challenges.
+
+At Jigisha, we believe that every child has a unique path to follow. Our aim is to nurture independent thinkers, responsible individuals, and lifelong learners who are prepared not only for academic success, but also for the changing world beyond the classroom.}
+  */
   const base = {
-    '/about': { title: 'A school shaped', italic: 'around possibility.', intro: 'A thoughtful beginning for learners, families and a community growing together.', blocks: [{ id: 'about-school', type: 'heading', text: 'Learning is more than a timetable.' }, { id: 'vision-&-mission', text: 'Jigisha International School is being built as a welcoming space for questions, confidence and connection. The school’s identity is rooted in the belief that education should help young people understand the world — and their place in it.' }, { id: "principal's-message", type: 'list', items: pillars.map(([n, t, x]) => [n, t, x]) }] },
+    '/about': { title: 'A school shaped', italic: 'around possibility.', intro: 'A thoughtful beginning for learners, families and a community growing together.', blocks: [{ id: 'about-school', type: 'heading', text: 'Learning is more than a timetable.' }, { id: 'vision-&-mission', text: `Jigisha International School is being built as a welcoming space where curiosity is encouraged, questions are valued, and every student is given the confidence to discover their potential. The school’s identity is rooted in the belief that education should go beyond textbooks and examinations, helping young people understand the world around them — and their place in it. Through a balanced approach to academics, creativity, values, and personal development, Jigisha strives to create an environment where students can learn with purpose and grow with confidence.\n\nOver the years, the school has been a meaningful part of the educational journeys of many students, supporting them as they discover their interests, develop their abilities, and prepare for the opportunities ahead. Many students who have passed through the school have gone on to pursue higher education, build successful careers, and make meaningful contributions in their chosen fields. Their journeys reflect the importance of a strong foundation, supportive guidance, and the confidence to take on new challenges.\n\nAt Jigisha, we believe that every child has a unique path to follow. Our aim is to nurture independent thinkers, responsible individuals, and lifelong learners who are prepared not only for academic success, but also for the changing world beyond the classroom.` }, { id: "principal's-message", type: 'list', items: pillars.map(([n, t, x]) => [n, t, x]) }] },
     '/academics': { title: 'Make learning', italic: 'matter.', intro: 'An approach that values strong foundations, active thinking and the joy of finding things out.', blocks: [{ id: 'curriculum', type: 'heading', text: 'The classroom is a starting point.' }, { id: 'teaching-approach', text: 'Our academic approach is designed to keep learners engaged with ideas, people and the world around them. Detailed curriculum and grade information will be shared by the school team as it is confirmed.' }, { id: 'activities', type: 'list', items: [['01', 'Foundations', 'Clear concepts, good questions and a steady sense of progress.'], ['02', 'Application', 'Learning that connects to real situations and meaningful problems.'], ['03', 'Expression', 'Multiple ways to explain, make, present and understand.']] }] },
     '/why-jigisha': { title: 'The Jigisha', italic: 'difference.', intro: 'A human-scale idea of school: high expectations, open minds and a strong sense of belonging.', blocks: [{ id: 'our-difference', type: 'heading', text: 'The best learning feels personal.' }, { id: 'school-values', text: 'We are creating an environment where learners are known, supported and encouraged to take meaningful responsibility. Our values are lived through the everyday details of school life.' }, { id: 'learning-spaces', type: 'list', items: journey.slice(0, 4).map(card => [card.number, card.title, card.text]) }] },
     '/admissions': { title: 'Your next step', italic: 'starts here.', intro: 'Tell us what you need to know and the school team will help you move forward with clarity.', blocks: [{ id: 'admission-process', type: 'heading', text: 'A clear beginning matters.' }, { id: 'required-documents', text: 'Admission availability, grade details and required documents are best confirmed directly with the school. Use the enquiry form to start a conversation with the team.' }, { id: 'enquiry', type: 'list', items: [['01', 'Send an enquiry', 'Share a few details about your family and preferred grade.'], ['02', 'Speak with the school', 'Receive current information and guidance for your situation.'], ['03', 'Visit and decide', 'Take the next step when you have the clarity you need.']] }] },
     '/student-life': { title: 'A full life', italic: 'at school.', intro: 'The moments between lessons matter too: friendships, movement, creativity and discovery.', blocks: [{ id: 'events', type: 'heading', text: 'There is more than one way to learn.' }, { id: 'sports', text: 'Student life at Jigisha is designed to make space for collaboration, expression and active wellbeing. As programmes are confirmed, this space will grow with the school community.' }, { id: 'arts-&-culture', type: 'list', items: journey.map(card => [card.number, card.title, card.text]) }] },
     '/gallery': { title: 'See Jigisha', italic: 'in focus.', intro: 'A visual journal of the spaces, people and moments that make a school feel like a community.', blocks: [{ type: 'heading', text: 'Our story, pictured with care.' }, { text: 'The Jigisha school building photograph currently anchors this visual journal. Additional verified views can be added as they are shared.' }, { type: 'list', items: [['01', 'Campus', 'The places where everyday learning happens.'], ['02', 'Community', 'The people and moments that bring school life to colour.'], ['03', 'Celebration', 'The milestones, events and achievements we share.']] }] },
-    '/achievements': { title: 'Every step', italic: 'counts.', intro: 'We will celebrate the milestones and moments that are meaningful to the Jigisha community.', blocks: [{ type: 'heading', text: 'A place for milestones.' }, { text: 'Verified achievements, awards and school milestones will be published here when ready. We will always keep this record accurate and useful for families.' }, { type: 'list', items: [['01', 'Learner growth', 'Recognising progress, effort and thoughtful contribution.'], ['02', 'Community moments', 'Celebrating the shared experiences that bring us together.']] }] },
     '/news': { title: "What's happening", italic: 'at Jigisha.', intro: 'Notes, announcements and stories from a school community taking shape.', blocks: [{ type: 'heading', text: 'The latest will be shared here.' }, { text: "School news and event updates will be published here when verified information is ready to share. For current information, please contact the school directly." }, { type: 'list', items: [['01', 'School updates', 'Important information for families and the wider community.'], ['02', 'Community stories', 'Small moments and big ideas from life at Jigisha.']] }] },
-    '/contact': { title: "Let's talk", italic: 'about school.', intro: "We're here to help with the questions that matter to your family.", blocks: [{ type: 'heading', text: 'Find us in N-7, CIDCO.' }, { text: `${schoolLocation.name}\n${schoolLocation.address}` }, { type: 'list', items: [['01', 'Enquiries', 'Use the enquiry form to share your questions and preferred contact details.'], ['02', 'School visit', 'Contact the school team to ask about the right time to visit.']] }] },
+    '/contact': { title: "Let's talk", italic: 'about school.', intro: "We're here to help with the questions that matter to your family.", blocks: [{ type: 'heading', text: 'Find us in N-7, CIDCO.' }, { text: <>{schoolLocation.name}<br />{schoolLocation.address}<br /><a href={schoolLocation.phoneHref}>{schoolLocation.phone}</a></> }, { type: 'list', items: [['01', 'Enquiries', 'Use the enquiry form to share your questions and preferred contact details.'], ['02', 'School visit', 'Contact the school team to ask about the right time to visit.']] }] },
   }
   return base[path] || base['/about']
 }

@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 
-from .content import FAQ, NEWS, SCHOOL
+from .content import FAQ, SCHOOL
 from .email import notify_new_enquiry, notify_new_review
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -31,6 +31,8 @@ GALLERY_CATEGORIES = (
 )
 GALLERY_ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 GALLERY_ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+NEWS_UPLOAD_DIR = GALLERY_UPLOAD_DIR / "news"
+NEWS_TYPES = ("news", "event")
 STATUS_VALUES = ("new", "contacted", "closed")
 REVIEW_ROLE_VALUES = ("Student", "Parent", "Alumni", "Teacher", "Other")
 REVIEW_STATUS_VALUES = ("pending", "approved", "rejected")
@@ -48,6 +50,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 GALLERY_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+NEWS_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads/gallery", StaticFiles(directory=GALLERY_UPLOAD_DIR), name="gallery-uploads")
 
 
@@ -108,6 +111,17 @@ class GalleryUpdate(BaseModel):
     title: Optional[str] = Field(default=None, max_length=160)
     description: Optional[str] = Field(default=None, max_length=1000)
     category: Optional[str] = Field(default=None, max_length=60)
+    is_published: Optional[bool] = None
+
+
+class NewsEventUpdate(BaseModel):
+    type: Optional[Literal["news", "event"]] = None
+    title: Optional[str] = Field(default=None, max_length=160)
+    description: Optional[str] = Field(default=None, max_length=4000)
+    published_date: Optional[str] = None
+    event_date: Optional[str] = None
+    event_time: Optional[str] = None
+    location: Optional[str] = Field(default=None, max_length=180)
     is_published: Optional[bool] = None
 
 
@@ -206,6 +220,24 @@ def init_db():
             FOREIGN KEY (created_by) REFERENCES admins(id)
         )""")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_gallery_images_published ON gallery_images (is_published, category, created_at)")
+        connection.execute("""CREATE TABLE IF NOT EXISTS news_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT NOT NULL CHECK (type IN ('news', 'event')),
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            image_url TEXT NOT NULL DEFAULT '',
+            image_storage_path TEXT NOT NULL DEFAULT '',
+            published_date TEXT NOT NULL,
+            event_date TEXT,
+            event_time TEXT,
+            location TEXT NOT NULL DEFAULT '',
+            is_published INTEGER NOT NULL DEFAULT 0,
+            created_by INTEGER,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (created_by) REFERENCES admins(id)
+        )""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_news_events_publication ON news_events (is_published, type, published_date, event_date)")
         migrate_environment_admin(connection, "ADMIN_EMAIL", "ADMIN_PASSWORD", "super_admin", "School Super Admin")
         migrate_environment_admin(connection, "SCHOOL_ADMIN_EMAIL", "SCHOOL_ADMIN_PASSWORD", "admin", "School Admin")
 
@@ -278,6 +310,12 @@ def require_super_admin(admin: dict = Depends(require_admin)) -> dict:
     return admin
 
 
+def require_news_editor(admin: dict = Depends(require_admin)) -> dict:
+    if admin["role"] not in ("admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="News management access required")
+    return admin
+
+
 def row_to_dict(row: sqlite3.Row) -> dict:
     return {key: row[key] for key in row.keys()}
 
@@ -309,6 +347,106 @@ def valid_image_signature(extension: str, contents: bytes) -> bool:
     return False
 
 
+def news_file_path(storage_path: str) -> Optional[Path]:
+    candidate = (NEWS_UPLOAD_DIR / Path(storage_path).name).resolve()
+    upload_root = NEWS_UPLOAD_DIR.resolve()
+    if candidate.parent != upload_root:
+        return None
+    return candidate
+
+
+def validate_news_fields(
+    item_type: str,
+    title: str,
+    description: str,
+    published_date: str,
+    event_date: str,
+    event_time: str,
+    location: str,
+) -> dict:
+    clean_type = item_type.strip().lower()
+    if clean_type not in NEWS_TYPES:
+        raise HTTPException(status_code=422, detail="Type must be News or Event")
+    clean_title = title.strip()
+    clean_description = description.strip()
+    clean_published_date = published_date.strip()
+    clean_event_date = event_date.strip()
+    clean_event_time = event_time.strip()
+    clean_location = location.strip()
+    if not clean_title:
+        raise HTTPException(status_code=422, detail="Title is required")
+    if not clean_description:
+        raise HTTPException(status_code=422, detail="Description is required")
+    for value, label in ((clean_published_date, "Published date"), (clean_event_date, "Event date")):
+        if value:
+            try:
+                datetime.strptime(value, "%Y-%m-%d")
+            except ValueError:
+                raise HTTPException(status_code=422, detail=f"{label} must be a valid date")
+    if not clean_published_date:
+        raise HTTPException(status_code=422, detail="Published date is required")
+    if clean_type == "event" and not clean_event_date:
+        raise HTTPException(status_code=422, detail="Event date is required for events")
+    if clean_event_time:
+        try:
+            datetime.strptime(clean_event_time, "%H:%M")
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Event time must be in HH:MM format")
+    return {
+        "type": clean_type,
+        "title": clean_title[:160],
+        "description": clean_description[:4000],
+        "published_date": clean_published_date,
+        "event_date": clean_event_date if clean_type == "event" else "",
+        "event_time": clean_event_time if clean_type == "event" else "",
+        "location": clean_location[:180] if clean_type == "event" else "",
+    }
+
+
+async def store_news_image(upload: Optional[UploadFile]) -> Optional[tuple[str, Path]]:
+    if not upload or not upload.filename:
+        return None
+    extension = Path(upload.filename).suffix.lower()
+    if extension not in GALLERY_ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=422, detail="Unsupported image type. Use JPG, PNG, or WEBP.")
+    if (upload.content_type or "").lower() not in GALLERY_ALLOWED_MIME_TYPES:
+        raise HTTPException(status_code=422, detail="The uploaded image MIME type is not supported.")
+    contents = await upload.read()
+    if not contents:
+        raise HTTPException(status_code=422, detail="The uploaded image is empty.")
+    if len(contents) > GALLERY_MAX_IMAGE_SIZE:
+        raise HTTPException(status_code=422, detail=f"Image exceeds the {GALLERY_MAX_IMAGE_SIZE // (1024 * 1024)} MB limit.")
+    if not valid_image_signature(extension, contents):
+        raise HTTPException(status_code=422, detail="The file contents do not match the selected image type.")
+    storage_name = f"{secrets.token_hex(20)}{extension}"
+    file_path = NEWS_UPLOAD_DIR / storage_name
+    try:
+        file_path.write_bytes(contents)
+    except OSError:
+        raise HTTPException(status_code=503, detail="The image could not be stored")
+    return storage_name, file_path
+
+
+def news_public_item(row: sqlite3.Row, request: Request) -> dict:
+    item = row_to_dict(row)
+    item["is_published"] = bool(item["is_published"])
+    image_url = ""
+    if item.get("image_storage_path"):
+        image_url = f"{str(request.base_url).rstrip('/')}/uploads/gallery/news/{item['image_storage_path']}"
+    item["image_url"] = image_url
+    item["image"] = image_url
+    item["date"] = item["event_date"] if item["type"] == "event" and item.get("event_date") else item["published_date"]
+    item["category"] = "Event" if item["type"] == "event" else "News"
+    event_details = " · ".join(value for value in (item.get("event_time"), item.get("location")) if value)
+    item["text"] = f"{item['description']} ({event_details})" if item["type"] == "event" and event_details else item["description"]
+    item.pop("image_storage_path", None)
+    item.pop("created_by", None)
+    return item
+
+
+NEWS_SELECT = "SELECT id, type, title, description, image_url, image_storage_path, published_date, event_date, event_time, location, is_published, created_by, created_at, updated_at FROM news_events"
+
+
 def get_enquiry(enquiry_id: int) -> dict:
     with sqlite3.connect(DB_PATH) as connection:
         connection.row_factory = sqlite3.Row
@@ -338,8 +476,159 @@ def school():
 
 
 @app.get("/api/news")
-def news():
-    return {"success": True, "items": NEWS}
+def news(request: Request):
+    with sqlite3.connect(DB_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            f"{NEWS_SELECT} WHERE is_published = 1 ORDER BY date(CASE WHEN type = 'event' AND event_date != '' THEN event_date ELSE published_date END) DESC, id DESC"
+        ).fetchall()
+    return {"success": True, "items": [news_public_item(row, request) for row in rows]}
+
+
+@app.get("/api/admin/news")
+def admin_news(
+    request: Request,
+    item_type: Optional[str] = Query(default=None, alias="type"),
+    publication: Optional[str] = Query(default=None),
+    _: dict = Depends(require_news_editor),
+):
+    if item_type and item_type not in NEWS_TYPES:
+        raise HTTPException(status_code=422, detail="Invalid news type")
+    if publication and publication not in ("published", "draft"):
+        raise HTTPException(status_code=422, detail="Invalid publication filter")
+    filters = []
+    params: list[str | int] = []
+    if item_type:
+        filters.append("type = ?")
+        params.append(item_type)
+    if publication:
+        filters.append("is_published = ?")
+        params.append(1 if publication == "published" else 0)
+    where = f" WHERE {' AND '.join(filters)}" if filters else ""
+    with sqlite3.connect(DB_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            f"{NEWS_SELECT}{where} ORDER BY datetime(updated_at) DESC, id DESC", params
+        ).fetchall()
+    return {"success": True, "items": [news_public_item(row, request) for row in rows]}
+
+
+@app.post("/api/news", status_code=201)
+async def create_news_event(
+    request: Request,
+    item_type: str = Form(default="news", alias="type"),
+    title: str = Form(default=""),
+    description: str = Form(default=""),
+    published_date: str = Form(default=""),
+    event_date: str = Form(default=""),
+    event_time: str = Form(default=""),
+    location: str = Form(default=""),
+    is_published: bool = Form(default=False),
+    image: Optional[UploadFile] = File(default=None),
+    admin: dict = Depends(require_news_editor),
+):
+    values = validate_news_fields(item_type, title, description, published_date, event_date, event_time, location)
+    stored_image = None
+    try:
+        stored_image = await store_news_image(image)
+        storage_path = stored_image[0] if stored_image else ""
+        now = utc_now().isoformat()
+        with sqlite3.connect(DB_PATH) as connection:
+            cursor = connection.execute(
+                f"INSERT INTO news_events (type, title, description, image_url, image_storage_path, published_date, event_date, event_time, location, is_published, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (values["type"], values["title"], values["description"], f"/uploads/gallery/news/{storage_path}" if storage_path else "", storage_path, values["published_date"], values["event_date"], values["event_time"], values["location"], int(is_published), admin["id"], now, now),
+            )
+            connection.row_factory = sqlite3.Row
+            row = connection.execute(f"{NEWS_SELECT} WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    except Exception:
+        if stored_image:
+            stored_image[1].unlink(missing_ok=True)
+        raise
+    finally:
+        if image:
+            await image.close()
+    return news_public_item(row, request)
+
+
+@app.patch("/api/news/{news_id}")
+async def update_news_event(
+    news_id: int,
+    request: Request,
+    item_type: Optional[str] = Form(default=None, alias="type"),
+    title: Optional[str] = Form(default=None),
+    description: Optional[str] = Form(default=None),
+    published_date: Optional[str] = Form(default=None),
+    event_date: Optional[str] = Form(default=None),
+    event_time: Optional[str] = Form(default=None),
+    location: Optional[str] = Form(default=None),
+    is_published: Optional[bool] = Form(default=None),
+    remove_image: bool = Form(default=False),
+    image: Optional[UploadFile] = File(default=None),
+    _: dict = Depends(require_news_editor),
+):
+    stored_image = None
+    old_storage_path = ""
+    try:
+        with sqlite3.connect(DB_PATH) as connection:
+            connection.row_factory = sqlite3.Row
+            existing = connection.execute(f"{NEWS_SELECT} WHERE id = ?", (news_id,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="News or event not found")
+        current = row_to_dict(existing)
+        values = validate_news_fields(
+            item_type if item_type is not None else current["type"],
+            title if title is not None else current["title"],
+            description if description is not None else current["description"],
+            published_date if published_date is not None else current["published_date"],
+            event_date if event_date is not None else current["event_date"] or "",
+            event_time if event_time is not None else current["event_time"] or "",
+            location if location is not None else current["location"] or "",
+        )
+        stored_image = await store_news_image(image)
+        old_storage_path = current["image_storage_path"] or ""
+        next_storage_path = stored_image[0] if stored_image else ("" if remove_image else old_storage_path)
+        now = utc_now().isoformat()
+        with sqlite3.connect(DB_PATH) as connection:
+            connection.execute(
+                """UPDATE news_events SET type = ?, title = ?, description = ?, image_url = ?, image_storage_path = ?,
+                   published_date = ?, event_date = ?, event_time = ?, location = ?, is_published = ?, updated_at = ?
+                   WHERE id = ?""",
+                (values["type"], values["title"], values["description"], f"/uploads/gallery/news/{next_storage_path}" if next_storage_path else "", next_storage_path, values["published_date"], values["event_date"], values["event_time"], values["location"], int(current["is_published"] if is_published is None else is_published), now, news_id),
+            )
+            connection.row_factory = sqlite3.Row
+            row = connection.execute(f"{NEWS_SELECT} WHERE id = ?", (news_id,)).fetchone()
+        if stored_image or remove_image:
+            old_file = news_file_path(old_storage_path)
+            if old_file:
+                try:
+                    old_file.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning("Unable to remove replaced news image for item %s", news_id)
+    except Exception:
+        if stored_image:
+            stored_image[1].unlink(missing_ok=True)
+        raise
+    finally:
+        if image:
+            await image.close()
+    return news_public_item(row, request)
+
+
+@app.delete("/api/news/{news_id}")
+def delete_news_event(news_id: int, _: dict = Depends(require_news_editor)):
+    with sqlite3.connect(DB_PATH) as connection:
+        connection.row_factory = sqlite3.Row
+        row = connection.execute("SELECT image_storage_path FROM news_events WHERE id = ?", (news_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="News or event not found")
+        connection.execute("DELETE FROM news_events WHERE id = ?", (news_id,))
+    image_path = news_file_path(row["image_storage_path"] or "")
+    if image_path:
+        try:
+            image_path.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("Unable to remove news image after deleting item %s", news_id)
+    return {"success": True, "message": "News or event deleted"}
 
 
 @app.get("/api/gallery")

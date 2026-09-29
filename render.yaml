@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: jigisha-backend
+    runtime: python
+    plan: starter
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      mkdir -p /var/data &&
+      if [ ! -f /var/data/jigisha.db ] && [ -f jigisha.db ]; then cp jigisha.db /var/data/jigisha.db; fi &&
+      rm -f jigisha.db &&
+      ln -s /var/data/jigisha.db jigisha.db &&
+      uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SCHOOL_ADMIN_EMAIL
+        sync: false
+      - key: SCHOOL_ADMIN_PASSWORD
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: ADMIN_NOTIFICATION_EMAIL
+        sync: false
+      - key: GALLERY_UPLOAD_DIR
+        value: /var/data/uploads/gallery
+      - key: GALLERY_MAX_IMAGE_SIZE_MB
+        value: "10"
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: LOG_LEVEL
+        value: INFO
+    disk:
+      name: jigisha-data
+      mountPath: /var/data
+      sizeGB: 1
